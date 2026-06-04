@@ -1,0 +1,2 @@
+requests
+growattServer==1.9.0
