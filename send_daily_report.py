@@ -335,33 +335,38 @@ def build_message(payload):
 Geração hoje: {br_number(today, 1)} kWh
 Geração no mês: {br_number(month, 1)} kWh
 """
-
 def send_whatsapp(message):
-    phone = env("WHATSAPP_PHONE", required=True)
-    apikey = env("WHATSAPP_APIKEY", required=True)
+    token = env("WAPPFLY_TOKEN", required=True)
+    to = env("WAPPFLY_TO", required=True)
 
-    url = "https://api.textmebot.com/send.php"
+    url = "https://wappfly.com/api/messages/send"
 
-    response = requests.get(
+    response = requests.post(
         url,
-        params={
-            "recipient": phone,
-            "apikey": apikey,
+        headers={
+            "X-API-Token": token,
+            "Content-Type": "application/json",
+        },
+        json={
+            "to": to,
             "text": message,
         },
         timeout=30,
     )
 
-    print("TextMeBot HTTP:", response.status_code)
+    print("Wappfly HTTP:", response.status_code)
     print("Resposta:", response.text[:500])
+
+    if response.status_code == 402:
+        raise RuntimeError("Cota gratuita do Wappfly acabou. Aguarde resetar ou reduza os testes.")
+
+    if not response.ok:
+        raise RuntimeError(f"Falha ao enviar WhatsApp pelo Wappfly: HTTP {response.status_code}")
 
     response_text = response.text.lower()
 
-    if not response.ok:
-        raise RuntimeError(f"Falha ao enviar WhatsApp: HTTP {response.status_code}")
-
-    if "invalid" in response_text or "error" in response_text:
-        raise RuntimeError(f"TextMeBot retornou erro: {response.text[:500]}")
+    if "error" in response_text or "invalid" in response_text or "unauthorized" in response_text:
+        raise RuntimeError(f"Wappfly retornou erro: {response.text[:500]}")
 
     return True
 
