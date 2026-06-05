@@ -343,19 +343,19 @@ def send_whatsapp(message):
     phone = env("WHATSAPP_PHONE", required=True)
     apikey = env("WHATSAPP_APIKEY", required=True)
 
-    url = "https://api.callmebot.com/whatsapp.php"
+    url = "https://api.textmebot.com/send.php"
 
     response = requests.get(
         url,
         params={
-            "phone": phone,
-            "text": message,
+            "recipient": phone,
             "apikey": apikey,
+            "text": message,
         },
         timeout=30,
     )
 
-    print("CallMeBot HTTP:", response.status_code)
+    print("TextMeBot HTTP:", response.status_code)
     print("Resposta:", response.text[:500])
 
     response_text = response.text.lower()
@@ -363,14 +363,8 @@ def send_whatsapp(message):
     if not response.ok:
         raise RuntimeError(f"Falha ao enviar WhatsApp: HTTP {response.status_code}")
 
-    if "apikey is invalid" in response_text:
-        raise RuntimeError("APIKey do CallMeBot inválida. Corrija o secret WHATSAPP_APIKEY.")
-
-    if "phone" in response_text and "not" in response_text and "found" in response_text:
-        raise RuntimeError("Número de WhatsApp não encontrado/ativado no CallMeBot.")
-
-    if "message queued" not in response_text and "message sent" not in response_text and "queued" not in response_text:
-        raise RuntimeError(f"CallMeBot não confirmou envio: {response.text[:500]}")
+    if "invalid" in response_text or "error" in response_text:
+        raise RuntimeError(f"TextMeBot retornou erro: {response.text[:500]}")
 
     return True
 
