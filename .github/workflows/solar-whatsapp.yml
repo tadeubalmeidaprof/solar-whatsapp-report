@@ -26,11 +26,11 @@ jobs:
 
       - name: Enviar relatório solar
         env:
-          GROWATT_API_TOKEN: ${{ secrets.GROWATT_API_TOKEN }}
+       GROWATT_API_TOKEN: ${{ secrets.GROWATT_API_TOKEN }}
           GROWATT_PLANT_ID: ${{ secrets.GROWATT_PLANT_ID }}
           GROWATT_DEVICE_SN: ${{ secrets.GROWATT_DEVICE_SN }}
           GROWATT_SERVER_URL: ${{ secrets.GROWATT_SERVER_URL }}
-          WHATSAPP_PHONE: ${{ secrets.WHATSAPP_PHONE }}
-          WHATSAPP_APIKEY: ${{ secrets.WHATSAPP_APIKEY }}
+          WAPPFLY_TOKEN: ${{ secrets.WAPPFLY_TOKEN }}
+          WAPPFLY_TO: ${{ secrets.WAPPFLY_TO }}
           ENERGY_TARIFF: ${{ secrets.ENERGY_TARIFF }}
         run: python send_daily_report.py
