@@ -1,11 +1,12 @@
 name: Enviar relatório solar no WhatsApp
 
 on:
+  # Permite rodar manualmente pela aba Actions
   workflow_dispatch:
 
+  # Roda automaticamente todo dia
   schedule:
-    # 18:30 no Brasil considerando UTC-3 = 21:30 UTC
-    # O GitHub usa UTC por padrão em workflows agendados.
+    # 18:30 no Brasil, considerando UTC-3 = 21:30 UTC
     - cron: "30 21 * * *"
 
 jobs:
@@ -22,15 +23,20 @@ jobs:
           python-version: "3.11"
 
       - name: Instalar dependências
-        run: pip install -r requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
       - name: Enviar relatório solar
         env:
-       GROWATT_API_TOKEN: ${{ secrets.GROWATT_API_TOKEN }}
+          GROWATT_API_TOKEN: ${{ secrets.GROWATT_API_TOKEN }}
           GROWATT_PLANT_ID: ${{ secrets.GROWATT_PLANT_ID }}
           GROWATT_DEVICE_SN: ${{ secrets.GROWATT_DEVICE_SN }}
           GROWATT_SERVER_URL: ${{ secrets.GROWATT_SERVER_URL }}
+          ENERGY_TARIFF: ${{ secrets.ENERGY_TARIFF }}
+
+          # Wappfly
           WAPPFLY_TOKEN: ${{ secrets.WAPPFLY_TOKEN }}
           WAPPFLY_TO: ${{ secrets.WAPPFLY_TO }}
-          ENERGY_TARIFF: ${{ secrets.ENERGY_TARIFF }}
+
         run: python send_daily_report.py
