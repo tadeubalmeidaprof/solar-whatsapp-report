@@ -356,10 +356,21 @@ def send_whatsapp(message):
     )
 
     print("CallMeBot HTTP:", response.status_code)
-    print("Resposta:", response.text[:300])
+    print("Resposta:", response.text[:500])
+
+    response_text = response.text.lower()
 
     if not response.ok:
         raise RuntimeError(f"Falha ao enviar WhatsApp: HTTP {response.status_code}")
+
+    if "apikey is invalid" in response_text:
+        raise RuntimeError("APIKey do CallMeBot inválida. Corrija o secret WHATSAPP_APIKEY.")
+
+    if "phone" in response_text and "not" in response_text and "found" in response_text:
+        raise RuntimeError("Número de WhatsApp não encontrado/ativado no CallMeBot.")
+
+    if "message queued" not in response_text and "message sent" not in response_text and "queued" not in response_text:
+        raise RuntimeError(f"CallMeBot não confirmou envio: {response.text[:500]}")
 
     return True
 
