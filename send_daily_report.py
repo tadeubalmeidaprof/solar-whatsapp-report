@@ -328,7 +328,7 @@ def build_message(payload):
 
     date_text = datetime.now().strftime("%d/%m/%Y")
 
-    return f"""☀️Tadeu, Aqui está seu relatório solar diário! - {date_text}
+    return f"""☀️Tadeu, aqui está seu relatório solar diário! - {date_text}
 
 Geração hoje: {br_number(today, 1)} kWh
 Geração no mês: {br_number(month, 1)} kWh
