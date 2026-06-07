@@ -322,51 +322,40 @@ def br_money(value):
     except Exception:
         return "R$ 0,00"
 
-
 def build_message(payload):
     today = float(payload.get("energyTodayKwh") or 0)
     month = float(payload.get("energyMonthKwh") or 0)
-   
 
     date_text = datetime.now().strftime("%d/%m/%Y")
 
-    return f"""☀️Olá Tadeu!
-     Aqui está seu relatório da Energia Solar Diário do dia - {date_text} ☀️
+    return f"""☀️Tadeu, Aqui está seu relatório solar diário! - {date_text}
+
 Geração hoje: {br_number(today, 1)} kWh
 Geração no mês: {br_number(month, 1)} kWh
 """
+
+
 def send_whatsapp(message):
-    token = env("WAPPFLY_TOKEN", required=True)
-    to = env("WAPPFLY_TO", required=True)
+    phone = env("WHATSAPP_PHONE", required=True)
+    apikey = env("WHATSAPP_APIKEY", required=True)
 
-    url = "https://wappfly.com/api/messages/send"
+    url = "https://api.callmebot.com/whatsapp.php"
 
-    response = requests.post(
+    response = requests.get(
         url,
-        headers={
-            "X-API-Token": token,
-            "Content-Type": "application/json",
-        },
-        json={
-            "to": to,
+        params={
+            "phone": phone,
             "text": message,
+            "apikey": apikey,
         },
         timeout=30,
     )
 
-    print("Wappfly HTTP:", response.status_code)
-    print("Resposta:", response.text[:500])
-
-    if response.status_code == 402:
-        raise RuntimeError("Cota gratuita do Wappfly acabou. Aguarde resetar ou reduza os testes.")
+    print("CallMeBot HTTP:", response.status_code)
+    print("Resposta:", response.text[:300])
 
     if not response.ok:
-        raise RuntimeError(f"Falha ao enviar WhatsApp pelo Wappfly: HTTP {response.status_code}")
-
-    response_text = response.text.lower()
-
-    if "error" in response_text or "invalid" in response_text or "unauthorized" in response_text:
-        raise RuntimeError(f"Wappfly retornou erro: {response.text[:500]}")
+        raise RuntimeError(f"Falha ao enviar WhatsApp: HTTP {response.status_code}")
 
     return True
 
