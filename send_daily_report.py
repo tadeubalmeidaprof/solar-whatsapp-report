@@ -368,8 +368,11 @@ def send_whatsapp(message):
 
     return True
 
-
 def main():
+    if os.getenv("GITHUB_EVENT_NAME") == "schedule" and not should_send_now():
+        print("Execução agendada ignorada porque está fora do horário permitido.")
+        return
+
     payload = fetch_growatt_payload()
     print("Payload Growatt:", payload)
 
