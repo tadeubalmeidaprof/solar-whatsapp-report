@@ -4,6 +4,7 @@ import sys
 import requests
 from datetime import datetime
 from zoneinfo import ZoneInfo
+
 import growattServer
 
 
@@ -20,9 +21,11 @@ STATUS_MAP = {
 
 def env(name, default="", required=False):
     value = os.getenv(name, default).strip()
+
     if required and not value:
         print(f"ERRO: variável {name} não configurada.")
         sys.exit(1)
+
     return value
 
 
@@ -34,6 +37,7 @@ def parse_number(value):
         return float(value)
 
     text = str(value).strip()
+
     if not text:
         return None
 
@@ -43,6 +47,7 @@ def parse_number(value):
         text = text.replace(",", ".")
 
     match = re.search(r"-?\d+(?:\.\d+)?", text)
+
     if not match:
         return None
 
@@ -54,6 +59,7 @@ def parse_number(value):
 
 def normalize_power_kw(value):
     number = parse_number(value)
+
     if number is None:
         return 0.0
 
@@ -74,22 +80,22 @@ def norm_key(key):
 
 
 def deep_find(obj, aliases):
-    wanted = {norm_key(a) for a in aliases}
+    wanted = {norm_key(alias) for alias in aliases}
 
-    def walk(x):
-        if isinstance(x, dict):
-            for k, v in x.items():
-                if norm_key(k) in wanted and v not in ("", None):
-                    return v
+    def walk(item):
+        if isinstance(item, dict):
+            for key, value in item.items():
+                if norm_key(key) in wanted and value not in ("", None):
+                    return value
 
-            for v in x.values():
-                found = walk(v)
+            for value in item.values():
+                found = walk(value)
                 if found not in ("", None):
                     return found
 
-        elif isinstance(x, list):
-            for item in x:
-                found = walk(item)
+        elif isinstance(item, list):
+            for value in item:
+                found = walk(value)
                 if found not in ("", None):
                     return found
 
@@ -116,29 +122,28 @@ def unwrap(obj):
     return current
 
 
-def should_send_now():
-    now_bahia = datetime.now(ZoneInfo("America/Bahia"))
-
-    # Só permite envio agendado entre 23:40 e 23:55 no horário da Bahia.
-    # O GitHub pode atrasar alguns minutos, por isso deixamos essa margem.
-    if now_bahia.hour == 23 and 40 <= now_bahia.minute <= 55:
-        return True
-
-    print(f"Fora do horário permitido. Agora na Bahia: {now_bahia.strftime('%d/%m/%Y %H:%M:%S')}")
-    return False
-
-
 def as_list(obj):
     data = unwrap(obj)
 
     if isinstance(data, list):
-        return [x for x in data if isinstance(x, dict)]
+        return [item for item in data if isinstance(item, dict)]
 
     if isinstance(data, dict):
-        for key in ("plants", "plant", "plantList", "devices", "device", "list", "records", "rows", "datas"):
+        for key in (
+            "plants",
+            "plant",
+            "plantList",
+            "devices",
+            "device",
+            "list",
+            "records",
+            "rows",
+            "datas",
+        ):
             value = data.get(key)
+
             if isinstance(value, list):
-                return [x for x in value if isinstance(x, dict)]
+                return [item for item in value if isinstance(item, dict)]
 
         return [data]
 
@@ -149,13 +154,14 @@ def call_first(api, candidates):
     last_error = None
 
     for method_name, args in candidates:
-        fn = getattr(api, method_name, None)
-        if not callable(fn):
+        function = getattr(api, method_name, None)
+
+        if not callable(function):
             continue
 
         try:
             print(f"Chamando Growatt: {method_name}{args}")
-            return fn(*args)
+            return function(*args)
         except Exception as exc:
             last_error = exc
             print(f"Falha em {method_name}: {exc}")
@@ -168,19 +174,25 @@ def call_first(api, candidates):
 
 def get_first_plant_id(api):
     configured = env("GROWATT_PLANT_ID")
+
     if configured:
         return configured
 
-    response = call_first(api, [
-        ("plant_list", tuple()),
-        ("plant_list_v1", tuple()),
-    ])
+    response = call_first(
+        api,
+        [
+            ("plant_list", tuple()),
+            ("plant_list_v1", tuple()),
+        ],
+    )
 
     plants = as_list(response)
+
     if not plants:
         raise RuntimeError("Nenhuma usina encontrada pelo token.")
 
     plant = plants[0]
+
     plant_id = (
         plant.get("plant_id")
         or plant.get("plantId")
@@ -196,19 +208,25 @@ def get_first_plant_id(api):
 
 def get_device_sn(api, plant_id):
     configured = env("GROWATT_DEVICE_SN")
+
     if configured:
         return configured
 
-    response = call_first(api, [
-        ("device_list", (plant_id,)),
-        ("device_list_v1", (plant_id,)),
-    ])
+    response = call_first(
+        api,
+        [
+            ("device_list", (plant_id,)),
+            ("device_list_v1", (plant_id,)),
+        ],
+    )
 
     devices = as_list(response)
+
     if not devices:
         return ""
 
     device = devices[0]
+
     sn = (
         device.get("sn")
         or device.get("deviceSn")
@@ -238,72 +256,138 @@ def fetch_growatt_payload():
         "device_sn": device_sn,
     }
 
-    raw["plant_overview"] = call_first(api, [
-        ("plant_energy_overview", (plant_id,)),
-        ("plant_energy_overview_v1", (plant_id,)),
-        ("plant_data", (plant_id,)),
-    ])
+    raw["plant_overview"] = call_first(
+        api,
+        [
+            ("plant_energy_overview", (plant_id,)),
+            ("plant_energy_overview_v1", (plant_id,)),
+            ("plant_data", (plant_id,)),
+        ],
+    )
 
     if device_sn:
         try:
-            raw["device_energy"] = call_first(api, [
-                ("min_energy", (device_sn,)),
-                ("min_energy_v1", (device_sn,)),
-                ("tlx_energy_overview", (plant_id, device_sn)),
-            ])
+            raw["device_energy"] = call_first(
+                api,
+                [
+                    ("min_energy", (device_sn,)),
+                    ("min_energy_v1", (device_sn,)),
+                    ("tlx_energy_overview", (plant_id, device_sn)),
+                ],
+            )
         except Exception as exc:
             print(f"Aviso: não consegui buscar energia do inversor: {exc}")
             raw["device_energy"] = {}
 
         try:
-            raw["device_detail"] = call_first(api, [
-                ("min_detail", (device_sn,)),
-                ("min_detail_v1", (device_sn,)),
-                ("tlx_system_status", (plant_id, device_sn)),
-            ])
+            raw["device_detail"] = call_first(
+                api,
+                [
+                    ("min_detail", (device_sn,)),
+                    ("min_detail_v1", (device_sn,)),
+                    ("tlx_system_status", (plant_id, device_sn)),
+                ],
+            )
         except Exception as exc:
             print(f"Aviso: não consegui buscar detalhes do inversor: {exc}")
             raw["device_detail"] = {}
 
-    power_raw = deep_find(raw, [
-        "powerNowKw", "currentPowerKw", "current_power_kw",
-        "currentPower", "current_power", "pac", "pacs",
-        "outputPower", "output_power", "plantPower", "inverterPower",
-        "power"
-    ])
+    power_raw = deep_find(
+        raw,
+        [
+            "powerNowKw",
+            "currentPowerKw",
+            "current_power_kw",
+            "currentPower",
+            "current_power",
+            "pac",
+            "pacs",
+            "outputPower",
+            "output_power",
+            "plantPower",
+            "inverterPower",
+            "power",
+        ],
+    )
 
-    today_raw = deep_find(raw, [
-        "energyTodayKwh", "todayEnergy", "today_energy",
-        "eToday", "eday", "dailyEnergy", "daily_energy",
-        "todayGenerateEnergy"
-    ])
+    today_raw = deep_find(
+        raw,
+        [
+            "energyTodayKwh",
+            "todayEnergy",
+            "today_energy",
+            "eToday",
+            "eday",
+            "dailyEnergy",
+            "daily_energy",
+            "todayGenerateEnergy",
+        ],
+    )
 
-    month_raw = deep_find(raw, [
-        "energyMonthKwh", "monthEnergy", "month_energy",
-        "eMonth", "emonth", "monthlyEnergy", "monthly_energy",
-        "monthGenerateEnergy"
-    ])
+    month_raw = deep_find(
+        raw,
+        [
+            "energyMonthKwh",
+            "monthEnergy",
+            "month_energy",
+            "eMonth",
+            "emonth",
+            "monthlyEnergy",
+            "monthly_energy",
+            "monthGenerateEnergy",
+        ],
+    )
 
-    year_raw = deep_find(raw, [
-        "energyYearKwh", "yearEnergy", "year_energy",
-        "eYear", "eyear", "yearlyEnergy", "yearly_energy",
-        "yearGenerateEnergy"
-    ])
+    year_raw = deep_find(
+        raw,
+        [
+            "energyYearKwh",
+            "yearEnergy",
+            "year_energy",
+            "eYear",
+            "eyear",
+            "yearlyEnergy",
+            "yearly_energy",
+            "yearGenerateEnergy",
+        ],
+    )
 
-    total_raw = deep_find(raw, [
-        "energyTotalKwh", "totalEnergy", "total_energy",
-        "eTotal", "etotal", "totalGenerateEnergy",
-        "total_generate_energy", "total"
-    ])
+    total_raw = deep_find(
+        raw,
+        [
+            "energyTotalKwh",
+            "totalEnergy",
+            "total_energy",
+            "eTotal",
+            "etotal",
+            "totalGenerateEnergy",
+            "total_generate_energy",
+            "total",
+        ],
+    )
 
-    status_raw = deep_find(raw, [
-        "status", "deviceStatus", "device_status",
-        "workStatus", "work_status", "inverterStatus", "state"
-    ])
+    status_raw = deep_find(
+        raw,
+        [
+            "status",
+            "deviceStatus",
+            "device_status",
+            "workStatus",
+            "work_status",
+            "inverterStatus",
+            "state",
+        ],
+    )
 
-    temp_raw = deep_find(raw, [
-        "temperature", "temp", "inverterTemp", "deviceTemperature"
-    ])
+    temperature_raw = deep_find(
+        raw,
+        [
+            "temperature",
+            "temp",
+            "inverterTemp",
+            "deviceTemperature",
+        ],
+    )
 
     status = str(status_raw or "").strip()
     status = STATUS_MAP.get(status, status or "Sem informação")
@@ -317,22 +401,20 @@ def fetch_growatt_payload():
         "energyYearKwh": clean_kwh(year_raw),
         "energyTotalKwh": clean_kwh(total_raw),
         "status": status,
-        "temperature": clean_kwh(temp_raw),
+        "temperature": clean_kwh(temperature_raw),
     }
 
 
 def br_number(value, decimals=1):
     try:
-        return f"{float(value):,.{decimals}f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        return (
+            f"{float(value):,.{decimals}f}"
+            .replace(",", "X")
+            .replace(".", ",")
+            .replace("X", ".")
+        )
     except Exception:
         return "0,0"
-
-
-def br_money(value):
-    try:
-        return "R$ " + f"{float(value):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-    except Exception:
-        return "R$ 0,00"
 
 
 def build_message(payload):
@@ -365,23 +447,20 @@ def send_whatsapp(message):
     )
 
     print("CallMeBot HTTP:", response.status_code)
-    print("Resposta:", response.text[:300])
+    print("Resposta:", response.text[:500])
+
+    response_text = response.text.lower()
 
     if not response.ok:
         raise RuntimeError(f"Falha ao enviar WhatsApp: HTTP {response.status_code}")
 
-    response_text = response.text.lower()
     if "invalid" in response_text or "error" in response_text:
-        raise RuntimeError(f"CallMeBot retornou erro: {response.text[:300]}")
+        raise RuntimeError(f"CallMeBot retornou erro: {response.text[:500]}")
 
     return True
 
 
 def main():
-if os.getenv("GITHUB_EVENT_NAME") == "schedule" and not should_send_now():
-        print("Execução agendada ignorada porque está fora do horário permitido.")
-        return
-
     payload = fetch_growatt_payload()
     print("Payload Growatt:", payload)
 
