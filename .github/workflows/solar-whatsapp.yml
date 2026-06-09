@@ -3,9 +3,9 @@ name: Enviar relatório solar no WhatsApp
 on:
   workflow_dispatch:
 
-  schedule:
-    # 18:30 no Brasil/Bahia = 21:30 UTC
-    - cron: "30 21 * * *"
+schedule:
+  # 23:20 no Brasil/Bahia = 02:20 UTC
+  - cron: "20 2 * * *"
 
 jobs:
   send-report:
