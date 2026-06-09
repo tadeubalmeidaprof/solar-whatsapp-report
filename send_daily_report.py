@@ -115,15 +115,19 @@ def unwrap(obj):
 
     return current
 
+
 def should_send_now():
     now_bahia = datetime.now(ZoneInfo("America/Bahia"))
 
-    # Só permite envio agendado entre 23:15 e 23:30
-    if now_bahia.hour == 23 and 15 <= now_bahia.minute <= 30:
+    # Só permite envio agendado entre 23:40 e 23:55 no horário da Bahia.
+    # O GitHub pode atrasar alguns minutos, por isso deixamos essa margem.
+    if now_bahia.hour == 23 and 40 <= now_bahia.minute <= 55:
         return True
 
     print(f"Fora do horário permitido. Agora na Bahia: {now_bahia.strftime('%d/%m/%Y %H:%M:%S')}")
     return False
+
+
 def as_list(obj):
     data = unwrap(obj)
 
@@ -330,13 +334,14 @@ def br_money(value):
     except Exception:
         return "R$ 0,00"
 
+
 def build_message(payload):
     today = float(payload.get("energyTodayKwh") or 0)
     month = float(payload.get("energyMonthKwh") or 0)
 
-    date_text = datetime.now().strftime("%d/%m/%Y")
+    date_text = datetime.now(ZoneInfo("America/Bahia")).strftime("%d/%m/%Y")
 
-    return f"""☀️Tadeu, aqui está seu relatório solar diário! - {date_text}
+    return f"""☀️ Tadeu, aqui está seu relatório solar diário! - {date_text}
 
 Geração hoje: {br_number(today, 1)} kWh
 Geração no mês: {br_number(month, 1)} kWh
@@ -365,10 +370,15 @@ def send_whatsapp(message):
     if not response.ok:
         raise RuntimeError(f"Falha ao enviar WhatsApp: HTTP {response.status_code}")
 
+    response_text = response.text.lower()
+    if "invalid" in response_text or "error" in response_text:
+        raise RuntimeError(f"CallMeBot retornou erro: {response.text[:300]}")
+
     return True
 
+
 def main():
-    if os.getenv("GITHUB_EVENT_NAME") == "schedule" and not should_send_now():
+if os.getenv("GITHUB_EVENT_NAME") == "schedule" and not should_send_now():
         print("Execução agendada ignorada porque está fora do horário permitido.")
         return
 
