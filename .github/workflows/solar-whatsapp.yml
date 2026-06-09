@@ -4,8 +4,7 @@ on:
   workflow_dispatch:
 
   schedule:
-    # 18:30 no Brasil considerando UTC-3 = 21:30 UTC
-    # O GitHub usa UTC por padrão em workflows agendados.
+    # 18:30 no Brasil/Bahia = 21:30 UTC
     - cron: "30 21 * * *"
 
 jobs:
@@ -13,6 +12,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Mostrar horário do runner
+        run: |
+          echo "UTC agora:"
+          date -u
+          echo "Brasil/Bahia agora:"
+          TZ='America/Bahia' date
+
       - name: Baixar arquivos do repositório
         uses: actions/checkout@v4
 
