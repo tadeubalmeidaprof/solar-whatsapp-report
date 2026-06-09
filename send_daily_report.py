@@ -118,13 +118,12 @@ def unwrap(obj):
 def should_send_now():
     now_bahia = datetime.now(ZoneInfo("America/Bahia"))
 
-    # Só permite envio agendado entre 18:25 e 18:45
-    if now_bahia.hour == 18 and 25 <= now_bahia.minute <= 45:
+    # Só permite envio agendado entre 23:15 e 23:30
+    if now_bahia.hour == 23 and 15 <= now_bahia.minute <= 30:
         return True
 
     print(f"Fora do horário permitido. Agora na Bahia: {now_bahia.strftime('%d/%m/%Y %H:%M:%S')}")
     return False
-
 def as_list(obj):
     data = unwrap(obj)
 
