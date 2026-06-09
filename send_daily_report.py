@@ -3,7 +3,7 @@ import re
 import sys
 import requests
 from datetime import datetime
-
+from zoneinfo import ZoneInfo
 import growattServer
 
 
@@ -115,6 +115,15 @@ def unwrap(obj):
 
     return current
 
+def should_send_now():
+    now_bahia = datetime.now(ZoneInfo("America/Bahia"))
+
+    # Só permite envio agendado entre 18:25 e 18:45
+    if now_bahia.hour == 18 and 25 <= now_bahia.minute <= 45:
+        return True
+
+    print(f"Fora do horário permitido. Agora na Bahia: {now_bahia.strftime('%d/%m/%Y %H:%M:%S')}")
+    return False
 
 def as_list(obj):
     data = unwrap(obj)
