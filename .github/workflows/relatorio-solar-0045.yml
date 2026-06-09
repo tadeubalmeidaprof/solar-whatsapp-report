@@ -1,0 +1,54 @@
+name: Relatório solar diário 00h45
+
+on:
+  workflow_dispatch:
+
+  schedule:
+    # 00:45 no Brasil/Bahia = 03:45 UTC
+    - cron: "45 3 * * *"
+
+jobs:
+  send-report:
+    runs-on: ubuntu-latest
+
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - name: Mostrar horário do runner
+        run: |
+          echo "UTC agora:"
+          date -u
+          echo "Brasil/Bahia agora:"
+          TZ='America/Bahia' date
+          echo "Evento GitHub:"
+          echo "$GITHUB_EVENT_NAME"
+
+      - name: Mostrar arquivo YAML ativo
+        run: |
+          echo "Arquivo workflow usado nesta execução:"
+          cat .github/workflows/relatorio-solar-0045.yml
+
+      - name: Baixar arquivos do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependências
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Enviar relatório solar
+        env:
+          GROWATT_API_TOKEN: ${{ secrets.GROWATT_API_TOKEN }}
+          GROWATT_PLANT_ID: ${{ secrets.GROWATT_PLANT_ID }}
+          GROWATT_DEVICE_SN: ${{ secrets.GROWATT_DEVICE_SN }}
+          GROWATT_SERVER_URL: ${{ secrets.GROWATT_SERVER_URL }}
+          WHATSAPP_PHONE: ${{ secrets.WHATSAPP_PHONE }}
+          WHATSAPP_APIKEY: ${{ secrets.WHATSAPP_APIKEY }}
+          ENERGY_TARIFF: ${{ secrets.ENERGY_TARIFF }}
+        run: python send_daily_report.py
