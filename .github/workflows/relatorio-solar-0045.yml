@@ -15,6 +15,9 @@ jobs:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
+      - name: Baixar arquivos do repositório
+        uses: actions/checkout@v4
+
       - name: Mostrar horário do runner
         run: |
           echo "UTC agora:"
@@ -26,11 +29,10 @@ jobs:
 
       - name: Mostrar arquivo YAML ativo
         run: |
-          echo "Arquivo workflow usado nesta execução:"
-          cat .github/workflows/relatorio-solar-0045.yml
-
-      - name: Baixar arquivos do repositório
-        uses: actions/checkout@v4
+          echo "Arquivos dentro de .github/workflows:"
+          ls -la .github/workflows
+          echo "Conteúdo dos workflows:"
+          cat .github/workflows/*.yml
 
       - name: Configurar Python
         uses: actions/setup-python@v5
