@@ -417,7 +417,7 @@ def br_number(value, decimals=1):
         return "0,0"
 
 
-def build_message(payload):
+def build_message_tadeu(payload):
     today = float(payload.get("energyTodayKwh") or 0)
     month = float(payload.get("energyMonthKwh") or 0)
 
@@ -430,10 +430,20 @@ Geração no mês: {br_number(month, 1)} kWh
 """
 
 
-def send_whatsapp(message):
-    phone = env("WHATSAPP_PHONE", required=True)
-    apikey = env("WHATSAPP_APIKEY", required=True)
+def build_message_pessoa2(payload):
+    today = float(payload.get("energyTodayKwh") or 0)
+    month = float(payload.get("energyMonthKwh") or 0)
 
+    date_text = datetime.now(ZoneInfo("America/Bahia")).strftime("%d/%m/%Y")
+
+    return f"""☀️ Rangel, aqui está seu relatório solar diário! - {date_text}
+
+Hoje a usina gerou: {br_number(today, 1)} kWh
+Total gerado no mês: {br_number(month, 1)} kWh
+"""
+
+
+def send_whatsapp_to(phone, apikey, message):
     url = "https://api.callmebot.com/whatsapp.php"
 
     response = requests.get(
@@ -446,16 +456,17 @@ def send_whatsapp(message):
         timeout=30,
     )
 
+    print(f"Enviando para {phone}")
     print("CallMeBot HTTP:", response.status_code)
     print("Resposta:", response.text[:500])
 
     response_text = response.text.lower()
 
     if not response.ok:
-        raise RuntimeError(f"Falha ao enviar WhatsApp: HTTP {response.status_code}")
+        raise RuntimeError(f"Falha ao enviar WhatsApp para {phone}: HTTP {response.status_code}")
 
     if "invalid" in response_text or "error" in response_text:
-        raise RuntimeError(f"CallMeBot retornou erro: {response.text[:500]}")
+        raise RuntimeError(f"CallMeBot retornou erro para {phone}: {response.text[:500]}")
 
     return True
 
@@ -464,11 +475,33 @@ def main():
     payload = fetch_growatt_payload()
     print("Payload Growatt:", payload)
 
-    message = build_message(payload)
-    print("Mensagem montada:")
-    print(message)
+    message_tadeu = build_message_tadeu(payload)
+    message_pessoa2 = build_message_pessoa2(payload)
 
-    send_whatsapp(message)
+    print("Mensagem para Tadeu:")
+    print(message_tadeu)
+
+    send_whatsapp_to(
+        env("WHATSAPP_PHONE", required=True),
+        env("WHATSAPP_APIKEY", required=True),
+        message_tadeu,
+    )
+
+    phone_2 = env("WHATSAPP_PHONE_2")
+    apikey_2 = env("WHATSAPP_APIKEY_2")
+
+    if phone_2 and apikey_2:
+        print("Mensagem para segunda pessoa:")
+        print(message_pessoa2)
+
+        send_whatsapp_to(
+            phone_2,
+            apikey_2,
+            message_pessoa2,
+        )
+    else:
+        print("Segundo número não configurado. Enviado apenas para o número principal.")
+
     print("Relatório enviado com sucesso.")
 
 
