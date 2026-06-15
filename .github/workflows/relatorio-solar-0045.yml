@@ -3,9 +3,7 @@ name: Relatório solar diário 00h45
 on:
   workflow_dispatch:
 
-  schedule:
-    # 00:45 no Brasil/Bahia = 03:45 UTC
-    - cron: "45 3 * * *"
+
 
 jobs:
   send-report:
