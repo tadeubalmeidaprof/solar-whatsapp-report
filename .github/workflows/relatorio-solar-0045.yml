@@ -50,5 +50,7 @@ jobs:
           GROWATT_SERVER_URL: ${{ secrets.GROWATT_SERVER_URL }}
           WHATSAPP_PHONE: ${{ secrets.WHATSAPP_PHONE }}
           WHATSAPP_APIKEY: ${{ secrets.WHATSAPP_APIKEY }}
+          WHATSAPP_PHONE_2: ${{ secrets.WHATSAPP_PHONE_2 }}
+          WHATSAPP_APIKEY_2: ${{ secrets.WHATSAPP_APIKEY_2 }}
           ENERGY_TARIFF: ${{ secrets.ENERGY_TARIFF }}
         run: python send_daily_report.py
