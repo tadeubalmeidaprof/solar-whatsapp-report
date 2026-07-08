@@ -27,18 +27,35 @@ MONTH_NAMES_PT = {
 }
 
 
+def month_info_from_date(reference_date: date) -> tuple[str, str, int]:
+    year_month = reference_date.strftime("%Y-%m")
+    month_label = f"{MONTH_NAMES_PT[reference_date.month]} de {reference_date.year}"
+    days_in_month = calendar.monthrange(reference_date.year, reference_date.month)[1]
+
+    return year_month, month_label, days_in_month
+
+
 def previous_month(reference_date: date) -> tuple[str, str, int]:
     first_day_current_month = reference_date.replace(day=1)
     last_day_previous_month = first_day_current_month - timedelta(days=1)
 
-    year_month = last_day_previous_month.strftime("%Y-%m")
-    month_label = f"{MONTH_NAMES_PT[last_day_previous_month.month]} de {last_day_previous_month.year}"
-    days_in_month = calendar.monthrange(
-        last_day_previous_month.year,
-        last_day_previous_month.month,
-    )[1]
+    return month_info_from_date(last_day_previous_month)
 
-    return year_month, month_label, days_in_month
+
+def get_report_month(reference_date: date) -> tuple[str, str, int]:
+    forced_year_month = os.getenv("REPORT_YEAR_MONTH", "").strip()
+
+    if not forced_year_month:
+        return previous_month(reference_date)
+
+    try:
+        forced_date = datetime.strptime(forced_year_month, "%Y-%m").date()
+    except ValueError as exc:
+        raise RuntimeError(
+            "REPORT_YEAR_MONTH inválido. Use o formato YYYY-MM, por exemplo 2026-07."
+        ) from exc
+
+    return month_info_from_date(forced_date)
 
 
 def format_brl(value: Decimal) -> str:
@@ -80,7 +97,7 @@ def should_send_to_second_person() -> bool:
 
 def main():
     today = datetime.now(REPORT_TIMEZONE).date()
-    year_month, month_label, days_in_month = previous_month(today)
+    year_month, month_label, days_in_month = get_report_month(today)
 
     station_id = os.getenv("GROWATT_PLANT_ID", "").strip()
     result = fetch_generation_for_month(year_month=year_month, station_id=station_id or None)
