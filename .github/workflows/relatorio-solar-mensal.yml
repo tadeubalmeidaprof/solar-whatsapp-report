@@ -2,6 +2,11 @@ name: Relatório solar mensal
 
 on:
   workflow_dispatch:
+    inputs:
+      report_year_month:
+        description: "Mês do relatório para teste, no formato YYYY-MM. Se vazio, usa o mês anterior."
+        required: false
+        default: ""
 
 jobs:
   send-monthly-report:
@@ -42,4 +47,5 @@ jobs:
           WHATSAPP_PHONE_2: ${{ secrets.WHATSAPP_PHONE_2 }}
           WHATSAPP_APIKEY_2: ${{ secrets.WHATSAPP_APIKEY_2 }}
           ENERGY_TARIFF: ${{ secrets.ENERGY_TARIFF }}
+          REPORT_YEAR_MONTH: ${{ github.event.inputs.report_year_month }}
         run: python send_monthly_report.py
