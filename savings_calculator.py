@@ -1,4 +1,6 @@
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal
+
+from utils import to_decimal, round_money
 
 
 MINIMUM_KWH_BY_CONNECTION_TYPE = {
@@ -6,22 +8,6 @@ MINIMUM_KWH_BY_CONNECTION_TYPE = {
     "bifasico": Decimal("50"),
     "trifasico": Decimal("100"),
 }
-
-
-def to_decimal(value) -> Decimal:
-    if value is None:
-        return Decimal("0")
-
-    text = str(value).strip().replace(",", ".")
-
-    if not text:
-        return Decimal("0")
-
-    return Decimal(text)
-
-
-def round_money(value: Decimal) -> Decimal:
-    return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def normalize_percentage(value) -> Decimal:
