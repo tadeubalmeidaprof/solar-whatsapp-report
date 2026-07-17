@@ -1,11 +1,12 @@
 import json
 import os
-from datetime import date
-from decimal import Decimal
+from datetime import date, timedelta
 from typing import Any
 
 import psycopg2
 from psycopg2.extras import RealDictCursor
+
+from utils import to_decimal
 
 
 def get_database_url() -> str:
@@ -24,18 +25,6 @@ def connect(database_url: str | None = None):
         return psycopg2.connect(database_url)
 
     return psycopg2.connect(database_url, sslmode="require")
-
-
-def to_decimal(value) -> Decimal:
-    if value is None:
-        return Decimal("0")
-
-    text = str(value).strip().replace(",", ".")
-
-    if not text:
-        return Decimal("0")
-
-    return Decimal(text)
 
 
 def save_monthly_generation_snapshot(
@@ -87,7 +76,7 @@ def save_monthly_generation_snapshot(
 def fetch_generation_for_month(
     year_month: str,
     station_id: str | None = None,
-) -> tuple[str, Decimal] | None:
+) -> tuple[str, Any] | None:
     station_id = (station_id or "").strip()
 
     if station_id:
@@ -288,7 +277,7 @@ def has_open_maintenance_alert(
         WHERE provider = %s
           AND station_id = %s
           AND alert_type = %s
-          AND status IN ('pending', 'approved', 'customer_notified')
+          AND status IN ('pending_confirmation', 'confirmed', 'approved', 'customer_notified')
         LIMIT 1;
     """
 
@@ -298,11 +287,44 @@ def has_open_maintenance_alert(
             return cursor.fetchone() is not None
 
 
+def fetch_recent_pending_alert(
+    provider: str,
+    station_id: str,
+    alert_type: str,
+    within_days: int = 5,
+) -> dict[str, Any] | None:
+    # busca um alerta pending_confirmation recente do mesmo tipo, pra
+    # decidir se essa detecção confirma um alerta anterior
+    cutoff = (date.today() - timedelta(days=within_days)).isoformat()
+
+    query = """
+        SELECT id, created_at, drop_percentage
+        FROM maintenance_alerts
+        WHERE provider = %s
+          AND station_id = %s
+          AND alert_type = %s
+          AND status = 'pending_confirmation'
+          AND created_at >= %s
+        ORDER BY created_at DESC
+        LIMIT 1;
+    """
+
+    with connect() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(query, (provider, str(station_id), alert_type, cutoff))
+            row = cursor.fetchone()
+
+    return dict(row) if row else None
+
+
 def create_maintenance_alert(
     provider: str,
     station_id: str,
     alert: dict[str, Any],
+    status: str = "pending_confirmation",
 ) -> int:
+    # nasce como pending_confirmation; só vira confirmed se a mesma
+    # condição aparecer de novo na execução seguinte
     query = """
         INSERT INTO maintenance_alerts (
             provider,
@@ -323,7 +345,7 @@ def create_maintenance_alert(
         )
         VALUES (
             %s, %s, %s, %s, %s, %s, %s, %s,
-            %s, %s, %s, %s::jsonb, 'pending', NOW(), NOW()
+            %s, %s, %s, %s::jsonb, %s, NOW(), NOW()
         )
         RETURNING id;
     """
@@ -345,6 +367,7 @@ def create_maintenance_alert(
                     int(alert.get("favorable_days_count", 0)),
                     alert.get("probable_cause", ""),
                     json.dumps(alert.get("details", {}), ensure_ascii=False),
+                    status,
                 ),
             )
             row = cursor.fetchone()
@@ -352,10 +375,24 @@ def create_maintenance_alert(
     return int(row[0])
 
 
+def confirm_maintenance_alert(alert_id: int) -> None:
+    query = """
+        UPDATE maintenance_alerts
+        SET status = 'confirmed',
+            updated_at = NOW()
+        WHERE id = %s;
+    """
+
+    with connect() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(query, (alert_id,))
+
+
 def mark_integrator_notified(alert_id: int) -> None:
     query = """
         UPDATE maintenance_alerts
-        SET integrator_notified_at = NOW(),
+        SET status = 'customer_notified',
+            integrator_notified_at = NOW(),
             updated_at = NOW()
         WHERE id = %s;
     """
