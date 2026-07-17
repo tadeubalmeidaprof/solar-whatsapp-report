@@ -1,162 +1,123 @@
-import os
-from datetime import datetime
 from decimal import Decimal
-from zoneinfo import ZoneInfo
 
-from database import (
-    create_maintenance_alert,
-    fetch_monitoring_history,
-    has_open_maintenance_alert,
-    mark_integrator_notified,
-    save_daily_generation,
-    save_daily_weather,
-)
-from maintenance import analyze_maintenance_need
-from send_daily_report import env, fetch_growatt_payload, send_whatsapp_to
-from weather import get_daily_weather
+from utils import to_decimal, round_money
 
 
-REPORT_TIMEZONE = ZoneInfo("America/Bahia")
-PROVIDER = "growatt"
+MINIMUM_KWH_BY_CONNECTION_TYPE = {
+    "monofasico": Decimal("30"),
+    "bifasico": Decimal("50"),
+    "trifasico": Decimal("100"),
+}
 
 
-def decimal_env(name: str, default: str) -> Decimal:
-    value = os.getenv(name, default).strip().replace(",", ".")
-    return Decimal(value)
+def normalize_percentage(value) -> Decimal:
+    percentage = to_decimal(value)
+
+    # Aceita 60 ou 0.60.
+    if percentage > 1:
+        return percentage / Decimal("100")
+
+    return percentage
 
 
-def integer_env(name: str, default: int) -> int:
-    value = os.getenv(name, str(default)).strip()
-    return int(value)
+def calculate_base_savings(
+    generation_month_kwh,
+    average_consumption_month_kwh,
+    final_tariff_kwh,
+    connection_type="monofasico",
+):
+    generation_month_kwh = to_decimal(generation_month_kwh)
+    average_consumption_month_kwh = to_decimal(average_consumption_month_kwh)
+    final_tariff_kwh = to_decimal(final_tariff_kwh)
+    connection_type = str(connection_type or "monofasico").strip().lower()
 
+    if connection_type not in MINIMUM_KWH_BY_CONNECTION_TYPE:
+        raise ValueError(
+            "connection_type inválido. Use: monofasico, bifasico ou trifasico."
+        )
 
-def format_number(value, decimals: int = 1) -> str:
-    return (
-        f"{float(value):,.{decimals}f}"
-        .replace(",", "X")
-        .replace(".", ",")
-        .replace("X", ".")
+    minimum_kwh = MINIMUM_KWH_BY_CONNECTION_TYPE[connection_type]
+
+    compensable_consumption_kwh = max(
+        average_consumption_month_kwh - minimum_kwh,
+        Decimal("0"),
     )
 
-
-def build_integrator_alert_message(alert: dict, station_id: str) -> str:
-    return f"""⚠️ Alerta preventivo SolCare
-
-Usina: {station_id}
-
-A geração ficou {format_number(alert['drop_percentage'], 1)}% abaixo do desempenho esperado em dias com radiação solar favorável.
-
-Geração diária esperada: {format_number(alert['expected_generation_kwh'], 1)} kWh
-Geração diária observada: {format_number(alert['observed_generation_kwh'], 1)} kWh
-Dias analisados: {alert['favorable_days_count']}
-
-Possível causa:
-{alert['probable_cause']}
-
-Recomendamos verificar a usina antes de entrar em contato com o cliente.
-"""
-
-
-def main() -> None:
-    now = datetime.now(REPORT_TIMEZONE)
-    report_date = now.date()
-
-    latitude = float(env("STATION_LATITUDE", required=True).replace(",", "."))
-    longitude = float(env("STATION_LONGITUDE", required=True).replace(",", "."))
-
-    payload = fetch_growatt_payload()
-    station_id = str(payload.get("plantId") or "").strip()
-
-    if not station_id:
-        raise RuntimeError("Não foi possível identificar o Plant ID da Growatt.")
-
-    save_daily_generation(
-        provider=PROVIDER,
-        station_id=station_id,
-        report_date=report_date,
-        generation_day_kwh=payload.get("energyTodayKwh", 0),
-        generation_month_kwh=payload.get("energyMonthKwh", 0),
-        inverter_status=str(payload.get("status") or ""),
-        device_sn=str(payload.get("deviceSn") or ""),
+    compensated_energy_kwh = min(
+        generation_month_kwh,
+        compensable_consumption_kwh,
     )
 
-    weather = get_daily_weather(
-        latitude=latitude,
-        longitude=longitude,
-        report_date=report_date,
+    generated_credits_kwh = max(
+        generation_month_kwh - compensated_energy_kwh,
+        Decimal("0"),
     )
 
-    save_daily_weather(
-        provider=PROVIDER,
-        station_id=station_id,
-        report_date=report_date,
-        latitude=latitude,
-        longitude=longitude,
-        weather=weather,
+    gross_savings = compensated_energy_kwh * final_tariff_kwh
+
+    return {
+        "generation_month_kwh": generation_month_kwh,
+        "average_consumption_month_kwh": average_consumption_month_kwh,
+        "final_tariff_kwh": final_tariff_kwh,
+        "connection_type": connection_type,
+        "minimum_kwh": minimum_kwh,
+        "compensable_consumption_kwh": compensable_consumption_kwh,
+        "compensated_energy_kwh": compensated_energy_kwh,
+        "generated_credits_kwh": generated_credits_kwh,
+        "gross_savings": round_money(gross_savings),
+    }
+
+
+def calculate_savings_without_fio_b(
+    generation_month_kwh,
+    average_consumption_month_kwh,
+    final_tariff_kwh,
+    connection_type="monofasico",
+):
+    data = calculate_base_savings(
+        generation_month_kwh=generation_month_kwh,
+        average_consumption_month_kwh=average_consumption_month_kwh,
+        final_tariff_kwh=final_tariff_kwh,
+        connection_type=connection_type,
     )
 
-    print(
-        "Monitoramento diário salvo:",
-        {
-            "station_id": station_id,
-            "report_date": report_date.isoformat(),
-            "generation_day_kwh": payload.get("energyTodayKwh", 0),
-            "generation_month_kwh": payload.get("energyMonthKwh", 0),
-            "weather_class": weather.get("weather_class"),
-            "solar_radiation_wh_m2": weather.get("solar_radiation_wh_m2"),
-            "rainfall_mm": weather.get("rainfall_mm"),
-        },
+    data["has_fio_b"] = False
+    data["fio_b_cost"] = Decimal("0.00")
+    data["estimated_savings"] = data["gross_savings"]
+
+    return data
+
+
+def calculate_savings_with_fio_b(
+    generation_month_kwh,
+    average_consumption_month_kwh,
+    final_tariff_kwh,
+    tusd_fio_b_kwh,
+    fio_b_percentage,
+    connection_type="monofasico",
+):
+    data = calculate_base_savings(
+        generation_month_kwh=generation_month_kwh,
+        average_consumption_month_kwh=average_consumption_month_kwh,
+        final_tariff_kwh=final_tariff_kwh,
+        connection_type=connection_type,
     )
 
-    history = fetch_monitoring_history(
-        provider=PROVIDER,
-        station_id=station_id,
-        limit=integer_env("MAINTENANCE_HISTORY_DAYS", 45),
+    tusd_fio_b_kwh = to_decimal(tusd_fio_b_kwh)
+    fio_b_percentage = normalize_percentage(fio_b_percentage)
+
+    fio_b_cost = (
+        data["compensated_energy_kwh"]
+        * tusd_fio_b_kwh
+        * fio_b_percentage
     )
 
-    analysis = analyze_maintenance_need(
-        history=history,
-        minimum_recent_days=integer_env("MAINTENANCE_RECENT_DAYS", 3),
-        minimum_baseline_days=integer_env("MAINTENANCE_BASELINE_DAYS", 7),
-        drop_threshold_percent=decimal_env("MAINTENANCE_DROP_PERCENT", "25"),
-        minimum_radiation_wh_m2=decimal_env("MAINTENANCE_MIN_RADIATION_WH_M2", "3000"),
-    )
+    estimated_savings = data["gross_savings"] - fio_b_cost
 
-    print("Resultado da análise de manutenção:", analysis)
+    data["has_fio_b"] = True
+    data["tusd_fio_b_kwh"] = tusd_fio_b_kwh
+    data["fio_b_percentage"] = fio_b_percentage
+    data["fio_b_cost"] = round_money(fio_b_cost)
+    data["estimated_savings"] = round_money(estimated_savings)
 
-    if not analysis.get("alert"):
-        print("Nenhum alerta de manutenção será criado nesta execução.")
-        return
-
-    alert_type = str(analysis["alert_type"])
-
-    if has_open_maintenance_alert(
-        provider=PROVIDER,
-        station_id=station_id,
-        alert_type=alert_type,
-    ):
-        print("Já existe um alerta aberto desse tipo para esta usina.")
-        return
-
-    alert_id = create_maintenance_alert(
-        provider=PROVIDER,
-        station_id=station_id,
-        alert=analysis,
-    )
-
-    message = build_integrator_alert_message(analysis, station_id)
-    print("Mensagem de alerta para a integradora:")
-    print(message)
-
-    send_whatsapp_to(
-        env("WHATSAPP_PHONE", required=True),
-        env("WHATSAPP_APIKEY", required=True),
-        message,
-    )
-
-    mark_integrator_notified(alert_id)
-    print(f"Alerta {alert_id} criado e enviado para a integradora.")
-
-
-if __name__ == "__main__":
-    main()
+    return data
