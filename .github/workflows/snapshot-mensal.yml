@@ -1,0 +1,40 @@
+name: Salvar snapshot mensal no Supabase
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: snapshot-mensal
+  cancel-in-progress: false
+
+jobs:
+  salvar-snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Baixar arquivos do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Instalar dependências
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Salvar geração mensal
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GROWATT_API_TOKEN: ${{ secrets.GROWATT_API_TOKEN }}
+          GROWATT_PLANT_ID: ${{ secrets.GROWATT_PLANT_ID }}
+          GROWATT_DEVICE_SN: ${{ secrets.GROWATT_DEVICE_SN }}
+          GROWATT_SERVER_URL: ${{ secrets.GROWATT_SERVER_URL }}
+        run: python save_monthly_snapshot.py
