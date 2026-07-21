@@ -1,0 +1,49 @@
+name: Monitoramento preventivo da usina
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: manutencao-preventiva
+  cancel-in-progress: false
+
+jobs:
+  monitorar-usina:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Baixar arquivos do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Instalar dependências
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Executar análise preventiva
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GROWATT_API_TOKEN: ${{ secrets.GROWATT_API_TOKEN }}
+          GROWATT_PLANT_ID: ${{ secrets.GROWATT_PLANT_ID }}
+          GROWATT_DEVICE_SN: ${{ secrets.GROWATT_DEVICE_SN }}
+          GROWATT_SERVER_URL: ${{ secrets.GROWATT_SERVER_URL }}
+          STATION_LATITUDE: ${{ secrets.STATION_LATITUDE }}
+          STATION_LONGITUDE: ${{ secrets.STATION_LONGITUDE }}
+          WHATSAPP_PHONE: ${{ secrets.WHATSAPP_PHONE }}
+          WHATSAPP_APIKEY: ${{ secrets.WHATSAPP_APIKEY }}
+          MAINTENANCE_HISTORY_DAYS: ${{ secrets.MAINTENANCE_HISTORY_DAYS }}
+          MAINTENANCE_RECENT_DAYS: ${{ secrets.MAINTENANCE_RECENT_DAYS }}
+          MAINTENANCE_BASELINE_DAYS: ${{ secrets.MAINTENANCE_BASELINE_DAYS }}
+          MAINTENANCE_DROP_PERCENT: ${{ secrets.MAINTENANCE_DROP_PERCENT }}
+          MAINTENANCE_MIN_RADIATION_WH_M2: ${{ secrets.MAINTENANCE_MIN_RADIATION_WH_M2 }}
+        run: python maintenance_report.py
