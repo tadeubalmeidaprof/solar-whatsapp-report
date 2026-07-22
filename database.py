@@ -170,42 +170,42 @@ def save_daily_weather(
 ) -> None:
     query = """
         INSERT INTO daily_weather (
-            provider,
-            station_id,
-            report_date,
-            latitude,
-            longitude,
-            cloud_cover_percent,
-            rainfall_mm,
-            solar_radiation_wh_m2,
-            sunshine_duration_hours,
-            temperature_min_c,
-            temperature_max_c,
-            weather_class,
-            weather_provider,
-            raw_payload,
-            collected_at,
-            updated_at
+            FORNECEDOR,
+            IDUSINA,
+            DATARELATORIO,
+            LATITUDE,
+            LONGITUDE,
+            PERCENTUALNUVENS,
+            CHUVAMM,
+            RADIACAOSOLARWHM2,
+            HORASSOL,
+            TEMPERATURAMINIMAC,
+            TEMPERATURAMAXIMAC,
+            CLASSIFICACAOCLIMA,
+            PROVEDORCLIMA,
+            DADOSBRUTOS,
+            COLETADOEM,
+            ATUALIZADOEM
         )
         VALUES (
             %s, %s, %s, %s, %s, %s, %s, %s,
             %s, %s, %s, %s, %s, %s::jsonb, NOW(), NOW()
         )
-        ON CONFLICT (provider, station_id, report_date)
+        ON CONFLICT (FORNECEDOR, IDUSINA, DATARELATORIO)
         DO UPDATE SET
-            latitude = EXCLUDED.latitude,
-            longitude = EXCLUDED.longitude,
-            cloud_cover_percent = EXCLUDED.cloud_cover_percent,
-            rainfall_mm = EXCLUDED.rainfall_mm,
-            solar_radiation_wh_m2 = EXCLUDED.solar_radiation_wh_m2,
-            sunshine_duration_hours = EXCLUDED.sunshine_duration_hours,
-            temperature_min_c = EXCLUDED.temperature_min_c,
-            temperature_max_c = EXCLUDED.temperature_max_c,
-            weather_class = EXCLUDED.weather_class,
-            weather_provider = EXCLUDED.weather_provider,
-            raw_payload = EXCLUDED.raw_payload,
-            collected_at = NOW(),
-            updated_at = NOW();
+            LATITUDE = EXCLUDED.LATITUDE,
+            LONGITUDE = EXCLUDED.LONGITUDE,
+            PERCENTUALNUVENS = EXCLUDED.PERCENTUALNUVENS,
+            CHUVAMM = EXCLUDED.CHUVAMM,
+            RADIACAOSOLARWHM2 = EXCLUDED.RADIACAOSOLARWHM2,
+            HORASSOL = EXCLUDED.HORASSOL,
+            TEMPERATURAMINIMAC = EXCLUDED.TEMPERATURAMINIMAC,
+            TEMPERATURAMAXIMAC = EXCLUDED.TEMPERATURAMAXIMAC,
+            CLASSIFICACAOCLIMA = EXCLUDED.CLASSIFICACAOCLIMA,
+            PROVEDORCLIMA = EXCLUDED.PROVEDORCLIMA,
+            DADOSBRUTOS = EXCLUDED.DADOSBRUTOS,
+            COLETADOEM = NOW(),
+            ATUALIZADOEM = NOW();
     """
 
     with connect() as conn:
@@ -218,15 +218,15 @@ def save_daily_weather(
                     report_date.isoformat(),
                     to_decimal(latitude),
                     to_decimal(longitude),
-                    to_decimal(weather.get("cloud_cover_percent")),
-                    to_decimal(weather.get("rainfall_mm")),
-                    to_decimal(weather.get("solar_radiation_wh_m2")),
-                    to_decimal(weather.get("sunshine_duration_hours")),
-                    to_decimal(weather.get("temperature_min_c")),
-                    to_decimal(weather.get("temperature_max_c")),
-                    weather.get("weather_class", "unknown"),
-                    weather.get("weather_provider", "open-meteo"),
-                    json.dumps(weather.get("raw_payload", {}), ensure_ascii=False),
+                    to_decimal(weather.get("PERCENTUALNUVENS")),
+                    to_decimal(weather.get("CHUVAMM")),
+                    to_decimal(weather.get("RADIACAOSOLARWHM2")),
+                    to_decimal(weather.get("HORASSOL")),
+                    to_decimal(weather.get("TEMPERATURAMINIMAC")),
+                    to_decimal(weather.get("TEMPERATURAMAXIMAC")),
+                    weather.get("CLASSIFICACAOCLIMA", "unknown"),
+                    weather.get("PROVEDORCLIMA", "open-meteo"),
+                    json.dumps(weather.get("DADOSBRUTOS", {}), ensure_ascii=False),
                 ),
             )
 
@@ -242,16 +242,16 @@ def fetch_monitoring_history(
             g.generation_day_kwh,
             g.generation_month_kwh,
             g.inverter_status,
-            w.cloud_cover_percent,
-            w.rainfall_mm,
-            w.solar_radiation_wh_m2,
-            w.sunshine_duration_hours,
-            w.weather_class
+            w.PERCENTUALNUVENS AS "PERCENTUALNUVENS",
+            w.CHUVAMM AS "CHUVAMM",
+            w.RADIACAOSOLARWHM2 AS "RADIACAOSOLARWHM2",
+            w.HORASSOL AS "HORASSOL",
+            w.CLASSIFICACAOCLIMA AS "CLASSIFICACAOCLIMA"
         FROM daily_generation g
         INNER JOIN daily_weather w
-            ON w.provider = g.provider
-           AND w.station_id = g.station_id
-           AND w.report_date = g.report_date
+            ON w.FORNECEDOR = g.provider
+           AND w.IDUSINA = g.station_id
+           AND w.DATARELATORIO = g.report_date
         WHERE g.provider = %s
           AND g.station_id = %s
         ORDER BY g.report_date DESC
