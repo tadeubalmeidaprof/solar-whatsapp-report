@@ -102,9 +102,9 @@ def main() -> None:
             "report_date": report_date.isoformat(),
             "generation_day_kwh": payload.get("energyTodayKwh", 0),
             "generation_month_kwh": payload.get("energyMonthKwh", 0),
-            "weather_class": weather.get("weather_class"),
-            "solar_radiation_wh_m2": weather.get("solar_radiation_wh_m2"),
-            "rainfall_mm": weather.get("rainfall_mm"),
+            "CLASSIFICACAOCLIMA": weather.get("CLASSIFICACAOCLIMA"),
+            "RADIACAOSOLARWHM2": weather.get("RADIACAOSOLARWHM2"),
+            "CHUVAMM": weather.get("CHUVAMM"),
         },
     )
 
