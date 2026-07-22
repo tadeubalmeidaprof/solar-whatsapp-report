@@ -23,8 +23,8 @@ def analyze_maintenance_need(
     valid_days = []
     for row in ordered:
         generation = to_decimal(row.get("generation_day_kwh"))
-        radiation = to_decimal(row.get("solar_radiation_wh_m2"))
-        rainfall = to_decimal(row.get("rainfall_mm"))
+        radiation = to_decimal(row.get("RADIACAOSOLARWHM2"))
+        rainfall = to_decimal(row.get("CHUVAMM"))
 
         if radiation < minimum_radiation_wh_m2:
             continue
