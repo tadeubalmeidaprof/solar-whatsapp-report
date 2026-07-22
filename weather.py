@@ -72,13 +72,13 @@ def get_daily_weather(
     )
 
     return {
-        "cloud_cover_percent": round(cloud_cover, 2),
-        "rainfall_mm": round(rainfall, 2),
-        "solar_radiation_wh_m2": round(radiation_wh_m2, 2),
-        "sunshine_duration_hours": round(sunshine_hours, 2),
-        "temperature_min_c": float((daily.get("temperature_2m_min") or [0])[0] or 0),
-        "temperature_max_c": float((daily.get("temperature_2m_max") or [0])[0] or 0),
-        "weather_class": weather_class,
-        "weather_provider": "open-meteo",
-        "raw_payload": payload,
+        "PERCENTUALNUVENS": round(cloud_cover, 2),
+        "CHUVAMM": round(rainfall, 2),
+        "RADIACAOSOLARWHM2": round(radiation_wh_m2, 2),
+        "HORASSOL": round(sunshine_hours, 2),
+        "TEMPERATURAMINIMAC": float((daily.get("temperature_2m_min") or [0])[0] or 0),
+        "TEMPERATURAMAXIMAC": float((daily.get("temperature_2m_max") or [0])[0] or 0),
+        "CLASSIFICACAOCLIMA": weather_class,
+        "PROVEDORCLIMA": "open-meteo",
+        "DADOSBRUTOS": payload,
     }
