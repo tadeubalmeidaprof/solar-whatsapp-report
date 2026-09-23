@@ -4,10 +4,13 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from database import (
+    confirm_maintenance_alert,
     create_maintenance_alert,
+    expire_stale_pending_maintenance_alerts,
     fetch_monitoring_history,
-    has_open_maintenance_alert,
+    fetch_open_maintenance_alert,
     mark_integrator_notified,
+    resolve_open_maintenance_alerts,
     save_daily_generation,
     save_daily_weather,
 )
@@ -21,13 +24,13 @@ PROVIDER = "growatt"
 
 
 def decimal_env(name: str, default: str) -> Decimal:
-    value = os.getenv(name, default).strip().replace(",", ".")
-    return Decimal(value)
+    value = os.getenv(name, "").strip() or default
+    return Decimal(value.replace(",", "."))
 
 
 def integer_env(name: str, default: int) -> int:
-    value = os.getenv(name, str(default)).strip()
-    return int(value)
+    value = os.getenv(name, "").strip()
+    return int(value or default)
 
 
 def format_number(value, decimals: int = 1) -> str:
@@ -108,6 +111,15 @@ def main() -> None:
         },
     )
 
+    confirmation_days = integer_env("MAINTENANCE_CONFIRMATION_DAYS", 5)
+    expired_count = expire_stale_pending_maintenance_alerts(
+        provider=PROVIDER,
+        station_id=station_id,
+        confirmation_days=confirmation_days,
+    )
+    if expired_count:
+        print(f"Alertas pendentes expirados: {expired_count}")
+
     history = fetch_monitoring_history(
         provider=PROVIDER,
         station_id=station_id,
@@ -127,24 +139,52 @@ def main() -> None:
     print("Resultado da análise de manutenção:", analysis)
 
     if not analysis.get("alert"):
-        print("Nenhum alerta de manutenção será criado nesta execução.")
+        if analysis.get("reason") == "drop_below_threshold":
+            resolved_count = resolve_open_maintenance_alerts(
+                provider=PROVIDER,
+                station_id=station_id,
+            )
+            if resolved_count:
+                print(f"Alertas de manutenção resolvidos: {resolved_count}")
+
+        print("Nenhum novo alerta de manutenção nesta execução.")
         return
 
     alert_type = str(analysis["alert_type"])
-
-    if has_open_maintenance_alert(
+    existing_alert = fetch_open_maintenance_alert(
         provider=PROVIDER,
         station_id=station_id,
         alert_type=alert_type,
-    ):
-        print("Já existe um alerta aberto desse tipo para esta usina.")
+    )
+
+    if not existing_alert:
+        alert_id = create_maintenance_alert(
+            provider=PROVIDER,
+            station_id=station_id,
+            alert=analysis,
+        )
+        print(
+            f"Alerta {alert_id} criado como pending_confirmation; "
+            "aguardando nova detecção antes de notificar."
+        )
         return
 
-    alert_id = create_maintenance_alert(
-        provider=PROVIDER,
-        station_id=station_id,
-        alert=analysis,
-    )
+    alert_id = int(existing_alert["id"])
+    status = str(existing_alert["status"])
+
+    if status == "integrator_notified":
+        print(f"Alerta {alert_id} já foi notificado para a integradora.")
+        return
+
+    if status == "pending_confirmation":
+        confirm_maintenance_alert(alert_id)
+        status = "confirmed"
+        print(f"Alerta {alert_id} confirmado por nova detecção.")
+
+    if status != "confirmed":
+        raise RuntimeError(
+            f"Estado inesperado do alerta de manutenção {alert_id}: {status}"
+        )
 
     message = build_integrator_alert_message(analysis, station_id)
     print("Mensagem de alerta para a integradora:")
@@ -157,7 +197,7 @@ def main() -> None:
     )
 
     mark_integrator_notified(alert_id)
-    print(f"Alerta {alert_id} criado e enviado para a integradora.")
+    print(f"Alerta {alert_id} enviado para a integradora.")
 
 
 if __name__ == "__main__":
