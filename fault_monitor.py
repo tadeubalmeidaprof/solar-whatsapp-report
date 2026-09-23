@@ -546,7 +546,7 @@ def import_faults(
             initial_status=initial_status,
         )
 
-        if not created or not recent:
+        if not recent or record.get("notified_at"):
             continue
 
         send_message(build_fault_message(fault, live))
