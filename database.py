@@ -1,6 +1,6 @@
 import json
 import os
-from datetime import date, timedelta
+from datetime import date
 from typing import Any
 
 import psycopg2
@@ -465,6 +465,7 @@ def resolve_open_maintenance_alerts(
         with conn.cursor() as cursor:
             cursor.execute(query, (provider, str(station_id)))
             return cursor.rowcount
+
 
 def ensure_growatt_fault_events_table() -> None:
     query = """
