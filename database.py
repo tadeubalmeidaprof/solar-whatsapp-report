@@ -400,3 +400,272 @@ def mark_integrator_notified(alert_id: int) -> None:
     with connect() as conn:
         with conn.cursor() as cursor:
             cursor.execute(query, (alert_id,))
+
+
+
+def ensure_growatt_fault_events_table() -> None:
+    query = """
+        CREATE TABLE IF NOT EXISTS growatt_fault_events (
+            id BIGSERIAL PRIMARY KEY,
+            station_id TEXT NOT NULL,
+            device_sn TEXT NOT NULL,
+            fault_code TEXT NOT NULL,
+            fault_code_raw TEXT NOT NULL,
+            fault_message TEXT,
+            fault_time TIMESTAMP NOT NULL,
+            recovery_time TIMESTAMP,
+            device_type TEXT,
+            solution TEXT,
+            raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+            status TEXT NOT NULL DEFAULT 'active',
+            normal_checks INTEGER NOT NULL DEFAULT 0,
+            last_normal_live_time TIMESTAMP,
+            notified_at TIMESTAMPTZ,
+            recovery_notified_at TIMESTAMPTZ,
+            resolved_at TIMESTAMP,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE (device_sn, fault_code_raw, fault_time)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_growatt_fault_events_active
+            ON growatt_fault_events (device_sn, status)
+            WHERE status = 'active';
+    """
+
+    with connect() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(query)
+
+
+def upsert_growatt_fault_event(
+    station_id: str,
+    device_sn: str,
+    fault_code: str,
+    fault_code_raw: str,
+    fault_message: str,
+    fault_time,
+    recovery_time,
+    device_type: str,
+    solution: str,
+    raw_payload: dict[str, Any],
+    initial_status: str,
+) -> tuple[dict[str, Any], bool]:
+    insert_query = """
+        INSERT INTO growatt_fault_events (
+            station_id,
+            device_sn,
+            fault_code,
+            fault_code_raw,
+            fault_message,
+            fault_time,
+            recovery_time,
+            device_type,
+            solution,
+            raw_payload,
+            status,
+            resolved_at,
+            created_at,
+            updated_at
+        )
+        VALUES (
+            %s, %s, %s, %s, %s, %s, %s, %s, %s,
+            %s::jsonb, %s, %s, NOW(), NOW()
+        )
+        ON CONFLICT (device_sn, fault_code_raw, fault_time)
+        DO NOTHING
+        RETURNING *;
+    """
+
+    resolved_at = recovery_time if initial_status == "resolved" else None
+
+    with connect() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(
+                insert_query,
+                (
+                    str(station_id),
+                    str(device_sn),
+                    str(fault_code),
+                    str(fault_code_raw),
+                    fault_message,
+                    fault_time,
+                    recovery_time,
+                    device_type,
+                    solution,
+                    json.dumps(raw_payload, ensure_ascii=False),
+                    initial_status,
+                    resolved_at,
+                ),
+            )
+            row = cursor.fetchone()
+
+            if row:
+                return dict(row), True
+
+            cursor.execute(
+                """
+                    UPDATE growatt_fault_events
+                    SET
+                        recovery_time = COALESCE(%s, recovery_time),
+                        fault_message = COALESCE(NULLIF(%s, ''), fault_message),
+                        device_type = COALESCE(NULLIF(%s, ''), device_type),
+                        solution = COALESCE(NULLIF(%s, ''), solution),
+                        raw_payload = %s::jsonb,
+                        updated_at = NOW()
+                    WHERE device_sn = %s
+                      AND fault_code_raw = %s
+                      AND fault_time = %s
+                    RETURNING *;
+                """,
+                (
+                    recovery_time,
+                    fault_message,
+                    device_type,
+                    solution,
+                    json.dumps(raw_payload, ensure_ascii=False),
+                    str(device_sn),
+                    str(fault_code_raw),
+                    fault_time,
+                ),
+            )
+            existing = cursor.fetchone()
+
+    if not existing:
+        raise RuntimeError("Não foi possível recuperar o evento Growatt após o upsert.")
+
+    return dict(existing), False
+
+
+def fetch_active_growatt_faults() -> list[dict[str, Any]]:
+    query = """
+        SELECT *
+        FROM growatt_fault_events
+        WHERE status = 'active'
+        ORDER BY fault_time ASC;
+    """
+
+    with connect() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(query)
+            rows = cursor.fetchall()
+
+    return [dict(row) for row in rows]
+
+
+def fetch_pending_growatt_recovery_notifications() -> list[dict[str, Any]]:
+    query = """
+        SELECT *
+        FROM growatt_fault_events
+        WHERE status = 'resolved'
+          AND notified_at IS NOT NULL
+          AND recovery_notified_at IS NULL
+        ORDER BY recovery_time ASC;
+    """
+
+    with connect() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(query)
+            rows = cursor.fetchall()
+
+    return [dict(row) for row in rows]
+
+
+def mark_growatt_fault_notified(event_id: int) -> None:
+    query = """
+        UPDATE growatt_fault_events
+        SET notified_at = NOW(),
+            updated_at = NOW()
+        WHERE id = %s;
+    """
+
+    with connect() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(query, (event_id,))
+
+
+def mark_growatt_fault_recovery_notified(event_id: int) -> None:
+    query = """
+        UPDATE growatt_fault_events
+        SET recovery_notified_at = NOW(),
+            updated_at = NOW()
+        WHERE id = %s;
+    """
+
+    with connect() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(query, (event_id,))
+
+
+def increment_growatt_fault_normal_check(event_id: int, live_time) -> int:
+    query = """
+        UPDATE growatt_fault_events
+        SET normal_checks = normal_checks + 1,
+            last_normal_live_time = %s,
+            updated_at = NOW()
+        WHERE id = %s
+          AND status = 'active'
+          AND (
+              last_normal_live_time IS NULL
+              OR last_normal_live_time <> %s
+          )
+        RETURNING normal_checks;
+    """
+
+    with connect() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                query,
+                (live_time, event_id, live_time),
+            )
+            row = cursor.fetchone()
+
+            if row:
+                return int(row[0])
+
+            cursor.execute(
+                """
+                    SELECT normal_checks
+                    FROM growatt_fault_events
+                    WHERE id = %s;
+                """,
+                (event_id,),
+            )
+            existing = cursor.fetchone()
+
+    return int(existing[0]) if existing else 0
+
+
+def reset_growatt_fault_normal_checks() -> None:
+    query = """
+        UPDATE growatt_fault_events
+        SET normal_checks = 0,
+            last_normal_live_time = NULL,
+            updated_at = NOW()
+        WHERE status = 'active'
+          AND normal_checks <> 0;
+    """
+
+    with connect() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(query)
+
+
+def mark_growatt_fault_resolved(event_id: int, resolved_at) -> None:
+    query = """
+        UPDATE growatt_fault_events
+        SET status = 'resolved',
+            resolved_at = %s,
+            recovery_time = COALESCE(recovery_time, %s),
+            normal_checks = 0,
+            last_normal_live_time = NULL,
+            updated_at = NOW()
+        WHERE id = %s;
+    """
+
+    with connect() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                query,
+                (resolved_at, resolved_at, event_id),
+            )
