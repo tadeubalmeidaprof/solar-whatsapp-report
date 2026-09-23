@@ -266,55 +266,49 @@ def fetch_monitoring_history(
     return [dict(row) for row in rows]
 
 
-def has_open_maintenance_alert(
+def fetch_open_maintenance_alert(
     provider: str,
     station_id: str,
     alert_type: str,
-) -> bool:
-    query = """
-        SELECT 1
-        FROM maintenance_alerts
-        WHERE provider = %s
-          AND station_id = %s
-          AND alert_type = %s
-          AND status IN ('pending_confirmation', 'confirmed', 'approved', 'customer_notified')
-        LIMIT 1;
-    """
-
-    with connect() as conn:
-        with conn.cursor() as cursor:
-            cursor.execute(query, (provider, str(station_id), alert_type))
-            return cursor.fetchone() is not None
-
-
-def fetch_recent_pending_alert(
-    provider: str,
-    station_id: str,
-    alert_type: str,
-    within_days: int = 5,
 ) -> dict[str, Any] | None:
-    # busca um alerta pending_confirmation recente do mesmo tipo, pra
-    # decidir se essa detecção confirma um alerta anterior
-    cutoff = (date.today() - timedelta(days=within_days)).isoformat()
-
     query = """
-        SELECT id, created_at, drop_percentage
+        SELECT *
         FROM maintenance_alerts
         WHERE provider = %s
           AND station_id = %s
           AND alert_type = %s
-          AND status = 'pending_confirmation'
-          AND created_at >= %s
+          AND status IN ('pending_confirmation', 'confirmed', 'integrator_notified')
         ORDER BY created_at DESC
         LIMIT 1;
     """
 
     with connect() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cursor:
-            cursor.execute(query, (provider, str(station_id), alert_type, cutoff))
+            cursor.execute(query, (provider, str(station_id), alert_type))
             row = cursor.fetchone()
 
     return dict(row) if row else None
+
+
+def expire_stale_pending_maintenance_alerts(
+    provider: str,
+    station_id: str,
+    confirmation_days: int,
+) -> int:
+    query = """
+        UPDATE maintenance_alerts
+        SET status = 'expired',
+            updated_at = NOW()
+        WHERE provider = %s
+          AND station_id = %s
+          AND status = 'pending_confirmation'
+          AND created_at < NOW() - (%s * INTERVAL '1 day');
+    """
+
+    with connect() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(query, (provider, str(station_id), confirmation_days))
+            return cursor.rowcount
 
 
 def create_maintenance_alert(
@@ -323,8 +317,6 @@ def create_maintenance_alert(
     alert: dict[str, Any],
     status: str = "pending_confirmation",
 ) -> int:
-    # nasce como pending_confirmation; só vira confirmed se a mesma
-    # condição aparecer de novo na execução seguinte
     query = """
         INSERT INTO maintenance_alerts (
             provider,
@@ -380,7 +372,8 @@ def confirm_maintenance_alert(alert_id: int) -> None:
         UPDATE maintenance_alerts
         SET status = 'confirmed',
             updated_at = NOW()
-        WHERE id = %s;
+        WHERE id = %s
+          AND status = 'pending_confirmation';
     """
 
     with connect() as conn:
@@ -391,16 +384,36 @@ def confirm_maintenance_alert(alert_id: int) -> None:
 def mark_integrator_notified(alert_id: int) -> None:
     query = """
         UPDATE maintenance_alerts
-        SET status = 'customer_notified',
-            integrator_notified_at = NOW(),
+        SET status = 'integrator_notified',
+            integrator_notified_at = COALESCE(integrator_notified_at, NOW()),
             updated_at = NOW()
-        WHERE id = %s;
+        WHERE id = %s
+          AND status = 'confirmed';
     """
 
     with connect() as conn:
         with conn.cursor() as cursor:
             cursor.execute(query, (alert_id,))
 
+
+def resolve_open_maintenance_alerts(
+    provider: str,
+    station_id: str,
+) -> int:
+    query = """
+        UPDATE maintenance_alerts
+        SET status = 'resolved',
+            resolved_at = COALESCE(resolved_at, NOW()),
+            updated_at = NOW()
+        WHERE provider = %s
+          AND station_id = %s
+          AND status IN ('pending_confirmation', 'confirmed', 'integrator_notified');
+    """
+
+    with connect() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(query, (provider, str(station_id)))
+            return cursor.rowcount
 
 def ensure_growatt_fault_events_table() -> None:
     query = """
