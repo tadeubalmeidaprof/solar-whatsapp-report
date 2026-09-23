@@ -15,9 +15,11 @@ from database import (
     save_daily_generation,
     save_daily_weather,
 )
+from config import env
+from growatt_client import fetch_growatt_payload
 from maintenance import analyze_maintenance_need
-from send_daily_report import env, fetch_growatt_payload, send_whatsapp_to
 from weather import get_daily_weather
+from whatsapp import send_whatsapp_to
 
 
 REPORT_TIMEZONE = ZoneInfo("America/Bahia")
