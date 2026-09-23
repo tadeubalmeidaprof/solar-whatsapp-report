@@ -20,7 +20,7 @@ from send_daily_report import env, send_whatsapp_to
 
 
 TIMEZONE = ZoneInfo("America/Bahia")
-DEFAULT_WEB_SERVER = "https://server.growatt.com"
+DEFAULT_WEB_SERVER = "https://openapi.growatt.com"
 
 ERROR_MESSAGES_PT = {
     "200": "Falha AFCI: possível arco elétrico no circuito fotovoltaico",
@@ -54,6 +54,36 @@ WARNING_MESSAGES_PT = {
     "401": "Falha de comunicação entre o inversor e o medidor",
     "404": "Anomalia na memória EEPROM",
     "405": "Versão de firmware incompatível ou inconsistente",
+}
+
+EVENT_NAME_MESSAGES_PT = {
+    "afci fault": "Falha AFCI: possível arco elétrico no circuito fotovoltaico",
+    "residual i high": "Corrente residual elevada",
+    "pv voltage high": "Tensão fotovoltaica acima do limite permitido",
+    "pv isolation low": "Baixo isolamento do sistema fotovoltaico",
+    "ac v outrange": "Tensão da rede AC fora da faixa permitida",
+    "no ac connection": "Sem conexão com a rede AC",
+    "ac f outrange": "Frequência da rede AC fora da faixa permitida",
+    "auto test failed": "Falha no autoteste do inversor",
+    "dci high": "Componente CC elevado na saída do inversor",
+    "bus sample fault": "Falha na medição do barramento interno",
+    "relay fault": "Falha do relé interno",
+    "over temperature": "Temperatura excessiva do inversor",
+    "bus over voltage": "Sobretensão no barramento interno",
+    "dsp communicate with m3 abnormal": "Falha de comunicação interna DSP/M3",
+    "eeprom fault": "Falha na memória EEPROM",
+    "over current": "Sobrecorrente detectada pela proteção de software",
+    "gfci device fault": "Falha na proteção contra fuga à terra (GFCI)",
+    "consistent fault": "Divergência entre as medições DSP e M3",
+    "afci self test fault": "Falha no autoteste AFCI",
+    "dc spd abnormal": "Anomalia no DPS do lado CC",
+    "pv short circuit": "Curto-circuito em uma entrada fotovoltaica",
+    "dryconnect function abnormal": "Anomalia na função de contato seco",
+    "pv1 boost driver broken": "Falha no circuito Boost fotovoltaico",
+    "usb over current": "Sobrecorrente na porta USB",
+    "meter communication abnormal": "Falha de comunicação entre o inversor e o medidor",
+    "eeprom abnormal": "Anomalia na memória EEPROM",
+    "firmware version inconsistent": "Versão de firmware incompatível ou inconsistente",
 }
 
 ERROR_GUIDANCE_PT = {
@@ -100,6 +130,10 @@ def parse_growatt_datetime(value) -> datetime | None:
     return None
 
 
+def normalized_message_key(value) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()).strip()
+
+
 def event_kind(fault: dict) -> str:
     text = " ".join(
         str(fault.get(key) or "")
@@ -113,6 +147,16 @@ def event_kind(fault: dict) -> str:
 
 
 def translated_message(fault: dict) -> str:
+    source_message = (
+        fault.get("eventName")
+        or fault.get("faultDescription")
+        or fault.get("alarmMessage")
+        or ""
+    )
+    by_name = EVENT_NAME_MESSAGES_PT.get(normalized_message_key(source_message))
+    if by_name:
+        return by_name
+
     raw_code = (
         fault.get("eventId")
         or fault.get("eventCode")
