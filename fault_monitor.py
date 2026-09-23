@@ -515,7 +515,7 @@ def import_faults(
         else:
             initial_status = "historical"
 
-        record, created = upsert_growatt_fault_event(
+        record, _created = upsert_growatt_fault_event(
             station_id=station_id,
             device_sn=device_sn,
             fault_code=normalize_fault_code(
