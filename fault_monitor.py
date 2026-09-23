@@ -73,7 +73,12 @@ def required_env(name: str) -> str:
 
 
 def int_env(name: str, default: int) -> int:
-    return int(os.getenv(name, str(default)).strip())
+    value = os.getenv(name, "").strip()
+    return int(value) if value else default
+
+
+def web_server() -> str:
+    return os.getenv("GROWATT_WEB_SERVER", "").strip().rstrip("/") or DEFAULT_WEB_SERVER
 
 
 def normalize_fault_code(value) -> str:
@@ -136,7 +141,7 @@ def translated_message(fault: dict) -> str:
 def growatt_login() -> requests.Session:
     username = required_env("GROWATT_USERNAME")
     password = required_env("GROWATT_PASSWORD")
-    server = os.getenv("GROWATT_WEB_SERVER", DEFAULT_WEB_SERVER).strip().rstrip("/")
+    server = web_server()
 
     session = requests.Session()
     session.headers.update(
@@ -177,7 +182,7 @@ def query_fault_page(
     day_text: str,
     page: int,
 ) -> dict:
-    server = os.getenv("GROWATT_WEB_SERVER", DEFAULT_WEB_SERVER).strip().rstrip("/")
+    server = web_server()
 
     response = session.post(
         f"{server}/log/getNewPlantFaultLog",
@@ -541,12 +546,25 @@ def confirm_recovery_with_live_data(live: dict) -> None:
         return
 
     required_checks = int_env("FAULT_RECOVERY_CONFIRMATIONS", 2)
+    live_time = parse_growatt_datetime(live.get("time"))
+    if live_time is None:
+        return
 
     for fault in active_faults:
         if fault.get("recovery_time"):
             continue
 
-        normal_checks = increment_growatt_fault_normal_check(fault["id"])
+        fault_time = fault["fault_time"]
+        if fault_time.tzinfo is None:
+            fault_time = fault_time.replace(tzinfo=TIMEZONE)
+
+        if live_time <= fault_time:
+            continue
+
+        normal_checks = increment_growatt_fault_normal_check(
+            fault["id"],
+            live_time.replace(tzinfo=None),
+        )
         if normal_checks < required_checks:
             continue
 
@@ -579,7 +597,7 @@ def main() -> None:
             device_sn=device_sn,
         )
     finally:
-        server = os.getenv("GROWATT_WEB_SERVER", DEFAULT_WEB_SERVER).strip().rstrip("/")
+        server = web_server()
         try:
             session.get(f"{server}/logout", timeout=10)
         except requests.RequestException:
