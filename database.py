@@ -451,8 +451,6 @@ def upsert_growatt_fault_event(
     raw_payload: dict[str, Any],
     initial_status: str,
 ) -> tuple[dict[str, Any], bool]:
-    ensure_growatt_fault_events_table()
-
     insert_query = """
         INSERT INTO growatt_fault_events (
             station_id,
@@ -540,8 +538,6 @@ def upsert_growatt_fault_event(
 
 
 def fetch_active_growatt_faults() -> list[dict[str, Any]]:
-    ensure_growatt_fault_events_table()
-
     query = """
         SELECT *
         FROM growatt_fault_events
@@ -558,8 +554,6 @@ def fetch_active_growatt_faults() -> list[dict[str, Any]]:
 
 
 def fetch_pending_growatt_recovery_notifications() -> list[dict[str, Any]]:
-    ensure_growatt_fault_events_table()
-
     query = """
         SELECT *
         FROM growatt_fault_events
