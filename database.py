@@ -367,10 +367,22 @@ def create_maintenance_alert(
     return int(row[0])
 
 
-def confirm_maintenance_alert(alert_id: int) -> None:
+def confirm_maintenance_alert(
+    alert_id: int,
+    alert: dict[str, Any],
+) -> None:
     query = """
         UPDATE maintenance_alerts
         SET status = 'confirmed',
+            severity = %s,
+            reference_start_date = %s,
+            reference_end_date = %s,
+            expected_generation_kwh = %s,
+            observed_generation_kwh = %s,
+            drop_percentage = %s,
+            favorable_days_count = %s,
+            probable_cause = %s,
+            details = %s::jsonb,
             updated_at = NOW()
         WHERE id = %s
           AND status = 'pending_confirmation';
@@ -378,7 +390,21 @@ def confirm_maintenance_alert(alert_id: int) -> None:
 
     with connect() as conn:
         with conn.cursor() as cursor:
-            cursor.execute(query, (alert_id,))
+            cursor.execute(
+                query,
+                (
+                    alert.get("severity", "warning"),
+                    alert.get("reference_start_date"),
+                    alert.get("reference_end_date"),
+                    to_decimal(alert.get("expected_generation_kwh")),
+                    to_decimal(alert.get("observed_generation_kwh")),
+                    to_decimal(alert.get("drop_percentage")),
+                    int(alert.get("favorable_days_count", 0)),
+                    alert.get("probable_cause", ""),
+                    json.dumps(alert.get("details", {}), ensure_ascii=False),
+                    alert_id,
+                ),
+            )
 
 
 def mark_integrator_notified(alert_id: int) -> None:
@@ -394,6 +420,31 @@ def mark_integrator_notified(alert_id: int) -> None:
     with connect() as conn:
         with conn.cursor() as cursor:
             cursor.execute(query, (alert_id,))
+
+
+def resolve_other_open_maintenance_alerts(
+    provider: str,
+    station_id: str,
+    current_alert_type: str,
+) -> int:
+    query = """
+        UPDATE maintenance_alerts
+        SET status = 'resolved',
+            resolved_at = COALESCE(resolved_at, NOW()),
+            updated_at = NOW()
+        WHERE provider = %s
+          AND station_id = %s
+          AND alert_type <> %s
+          AND status IN ('pending_confirmation', 'confirmed', 'integrator_notified');
+    """
+
+    with connect() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                query,
+                (provider, str(station_id), current_alert_type),
+            )
+            return cursor.rowcount
 
 
 def resolve_open_maintenance_alerts(
