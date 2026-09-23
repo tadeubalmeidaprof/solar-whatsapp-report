@@ -200,6 +200,7 @@ def growatt_login() -> requests.Session:
         }
     )
 
+    # O login web da Growatt exige o hash MD5 da senha no campo passwordCrc.
     response = session.post(
         f"{server}/login",
         data={
