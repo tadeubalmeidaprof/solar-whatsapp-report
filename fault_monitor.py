@@ -7,49 +7,78 @@ from zoneinfo import ZoneInfo
 
 import requests
 
-from database import connect
+from database import (
+    fetch_active_growatt_faults,
+    increment_growatt_fault_normal_check,
+    mark_growatt_fault_notified,
+    mark_growatt_fault_recovery_notified,
+    mark_growatt_fault_resolved,
+    reset_growatt_fault_normal_checks,
+    upsert_growatt_fault_event,
+)
 from send_daily_report import env, send_whatsapp_to
 
 
 TIMEZONE = ZoneInfo("America/Bahia")
 DEFAULT_WEB_SERVER = "https://server.growatt.com"
-DEFAULT_NOTIFY_MAX_AGE_MINUTES = 180
 
+ERROR_MESSAGES_PT = {
+    "200": "Falha AFCI: possível arco elétrico no circuito fotovoltaico",
+    "201": "Corrente residual elevada",
+    "202": "Tensão fotovoltaica acima do limite permitido",
+    "203": "Baixo isolamento do sistema fotovoltaico",
+    "300": "Tensão da rede AC fora da faixa permitida",
+    "302": "Sem conexão com a rede AC",
+    "303": "Anomalia entre neutro e aterramento (PE)",
+    "304": "Frequência da rede AC fora da faixa permitida",
+    "402": "Componente CC elevado na saída do inversor",
+    "404": "Falha na medição do barramento interno",
+    "405": "Falha do relé interno",
+    "407": "Falha no autoteste do inversor",
+    "408": "Temperatura excessiva do inversor",
+    "409": "Sobretensão no barramento interno",
+    "411": "Falha de comunicação interna DSP/M3",
+    "414": "Falha na memória EEPROM",
+    "416": "Sobrecorrente detectada pela proteção de software",
+    "420": "Falha na proteção contra fuga à terra (GFCI)",
+    "422": "Divergência entre as medições DSP e M3",
+    "425": "Falha no autoteste AFCI",
+}
 
-FAULT_INFO = {
-    "302": {
-        "title": "Sem conexão AC",
-        "explanation": (
-            "O inversor deixou de detectar a rede elétrica no lado AC. "
-            "Verifique alimentação, disjuntor e conexões AC."
-        ),
-    },
-    "304": {
-        "title": "Frequência AC fora da faixa",
-        "explanation": (
-            "A frequência da rede elétrica ficou fora da faixa aceita pelo inversor. "
-            "Pode ser uma oscilação momentânea da concessionária."
-        ),
-    },
+WARNING_MESSAGES_PT = {
+    "202": "Anomalia no DPS do lado CC",
+    "203": "Curto-circuito em uma entrada fotovoltaica",
+    "204": "Anomalia na função de contato seco",
+    "205": "Falha no circuito Boost fotovoltaico",
+    "207": "Sobrecorrente na porta USB",
+    "401": "Falha de comunicação entre o inversor e o medidor",
+    "404": "Anomalia na memória EEPROM",
+    "405": "Versão de firmware incompatível ou inconsistente",
+}
+
+ERROR_GUIDANCE_PT = {
+    "302": "Verifique falta de energia, disjuntor AC e conexões do lado AC.",
+    "304": (
+        "A frequência fornecida pela rede saiu da faixa aceita pelo inversor. "
+        "Se ocorrer repetidamente, verifique a qualidade da rede elétrica."
+    ),
 }
 
 
-def get_required(name: str) -> str:
+def required_env(name: str) -> str:
     value = os.getenv(name, "").strip()
     if not value:
         raise RuntimeError(f"Variável {name} não configurada.")
     return value
 
 
-def get_int(name: str, default: int) -> int:
-    raw = os.getenv(name, str(default)).strip()
-    return int(raw)
+def int_env(name: str, default: int) -> int:
+    return int(os.getenv(name, str(default)).strip())
 
 
 def normalize_fault_code(value) -> str:
-    text = str(value or "").strip()
-    match = re.match(r"(\d+)", text)
-    return match.group(1) if match else text
+    match = re.match(r"(\d+)", str(value or "").strip())
+    return match.group(1) if match else str(value or "").strip()
 
 
 def parse_growatt_datetime(value) -> datetime | None:
@@ -57,170 +86,56 @@ def parse_growatt_datetime(value) -> datetime | None:
         return None
 
     text = str(value).strip()
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+    for pattern in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
         try:
-            return datetime.strptime(text, fmt).replace(tzinfo=TIMEZONE)
+            return datetime.strptime(text, pattern).replace(tzinfo=TIMEZONE)
         except ValueError:
-            pass
+            continue
 
     return None
 
 
-def ensure_fault_table() -> None:
-    sql = """
-        CREATE TABLE IF NOT EXISTS growatt_fault_events (
-            id BIGSERIAL PRIMARY KEY,
-            station_id TEXT NOT NULL,
-            device_sn TEXT NOT NULL,
-            fault_code TEXT NOT NULL,
-            fault_code_raw TEXT,
-            fault_message TEXT,
-            fault_time TIMESTAMP NOT NULL,
-            recovery_time TIMESTAMP,
-            device_type TEXT,
-            solution TEXT,
-            raw_payload JSONB,
-            notified_at TIMESTAMPTZ,
-            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            UNIQUE (device_sn, fault_code_raw, fault_time)
-        );
-    """
+def event_kind(fault: dict) -> str:
+    text = " ".join(
+        str(fault.get(key) or "")
+        for key in ("eventName", "faultDescription", "alarmMessage", "eventType")
+    ).lower()
 
-    with connect() as conn:
-        with conn.cursor() as cursor:
-            cursor.execute(sql)
+    if "warn" in text or "warning" in text:
+        return "warning"
+
+    return "error"
 
 
-def upsert_fault_event(station_id: str, device_sn: str, fault: dict) -> tuple[int, bool]:
-    fault_code_raw = str(
+def translated_message(fault: dict) -> str:
+    raw_code = (
         fault.get("eventId")
         or fault.get("eventCode")
         or fault.get("alarmCode")
         or ""
-    ).strip()
-    fault_code = normalize_fault_code(fault_code_raw)
-
-    fault_time = parse_growatt_datetime(
-        fault.get("time") or fault.get("startTime")
     )
-    if fault_time is None:
-        raise RuntimeError(f"Falha sem horário válido: {fault}")
+    code = normalize_fault_code(raw_code)
+    kind = event_kind(fault)
 
-    recovery_time = parse_growatt_datetime(
-        fault.get("recoveryTime") or fault.get("endTime")
-    )
+    if kind == "warning":
+        translated = WARNING_MESSAGES_PT.get(code)
+    else:
+        translated = ERROR_MESSAGES_PT.get(code)
 
-    fault_message = str(
+    if translated:
+        return translated
+
+    return str(
         fault.get("eventName")
         or fault.get("faultDescription")
         or fault.get("alarmMessage")
-        or ""
+        or "Falha Growatt"
     ).strip()
-
-    device_type = str(fault.get("deviceType") or "").strip()
-    solution = str(
-        fault.get("solution")
-        or fault.get("eventSolution")
-        or ""
-    ).strip()
-
-    raw_payload = json.dumps(fault, ensure_ascii=False)
-
-    insert_sql = """
-        INSERT INTO growatt_fault_events (
-            station_id,
-            device_sn,
-            fault_code,
-            fault_code_raw,
-            fault_message,
-            fault_time,
-            recovery_time,
-            device_type,
-            solution,
-            raw_payload,
-            created_at,
-            updated_at
-        )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, NOW(), NOW())
-        ON CONFLICT (device_sn, fault_code_raw, fault_time)
-        DO NOTHING
-        RETURNING id;
-    """
-
-    with connect() as conn:
-        with conn.cursor() as cursor:
-            cursor.execute(
-                insert_sql,
-                (
-                    station_id,
-                    device_sn,
-                    fault_code,
-                    fault_code_raw,
-                    fault_message,
-                    fault_time.replace(tzinfo=None),
-                    recovery_time.replace(tzinfo=None) if recovery_time else None,
-                    device_type,
-                    solution,
-                    raw_payload,
-                ),
-            )
-            row = cursor.fetchone()
-
-            if row:
-                return int(row[0]), True
-
-            cursor.execute(
-                """
-                    UPDATE growatt_fault_events
-                    SET
-                        recovery_time = COALESCE(%s, recovery_time),
-                        fault_message = COALESCE(NULLIF(%s, ''), fault_message),
-                        device_type = COALESCE(NULLIF(%s, ''), device_type),
-                        solution = COALESCE(NULLIF(%s, ''), solution),
-                        raw_payload = %s::jsonb,
-                        updated_at = NOW()
-                    WHERE device_sn = %s
-                      AND fault_code_raw = %s
-                      AND fault_time = %s
-                    RETURNING id;
-                """,
-                (
-                    recovery_time.replace(tzinfo=None) if recovery_time else None,
-                    fault_message,
-                    device_type,
-                    solution,
-                    raw_payload,
-                    device_sn,
-                    fault_code_raw,
-                    fault_time.replace(tzinfo=None),
-                ),
-            )
-            existing = cursor.fetchone()
-
-    if not existing:
-        raise RuntimeError("Não foi possível localizar o evento após o upsert.")
-
-    return int(existing[0]), False
-
-
-def mark_notified(event_id: int) -> None:
-    with connect() as conn:
-        with conn.cursor() as cursor:
-            cursor.execute(
-                """
-                    UPDATE growatt_fault_events
-                    SET notified_at = NOW(),
-                        updated_at = NOW()
-                    WHERE id = %s;
-                """,
-                (event_id,),
-            )
 
 
 def growatt_login() -> requests.Session:
-    username = get_required("GROWATT_USERNAME")
-    password = get_required("GROWATT_PASSWORD")
+    username = required_env("GROWATT_USERNAME")
+    password = required_env("GROWATT_PASSWORD")
     server = os.getenv("GROWATT_WEB_SERVER", DEFAULT_WEB_SERVER).strip().rstrip("/")
 
     session = requests.Session()
@@ -234,8 +149,6 @@ def growatt_login() -> requests.Session:
         }
     )
 
-    password_md5 = hashlib.md5(password.encode("utf-8")).hexdigest()
-
     response = session.post(
         f"{server}/login",
         data={
@@ -243,7 +156,7 @@ def growatt_login() -> requests.Session:
             "password": "",
             "validateCode": "",
             "isReadPact": "0",
-            "passwordCrc": password_md5,
+            "passwordCrc": hashlib.md5(password.encode("utf-8")).hexdigest(),
         },
         timeout=30,
     )
@@ -261,7 +174,7 @@ def query_fault_page(
     session: requests.Session,
     station_id: str,
     device_sn: str,
-    date_text: str,
+    day_text: str,
     page: int,
 ) -> dict:
     server = os.getenv("GROWATT_WEB_SERVER", DEFAULT_WEB_SERVER).strip().rstrip("/")
@@ -270,7 +183,7 @@ def query_fault_page(
         f"{server}/log/getNewPlantFaultLog",
         data={
             "plantId": station_id,
-            "date": date_text,
+            "date": day_text,
             "deviceSn": device_sn,
             "toPageNum": page,
             "type": 1,
@@ -292,7 +205,7 @@ def fetch_faults_for_day(
     device_sn: str,
     day_text: str,
 ) -> list[dict]:
-    faults: list[dict] = []
+    faults = []
     page = 1
 
     while True:
@@ -300,7 +213,7 @@ def fetch_faults_for_day(
             session=session,
             station_id=station_id,
             device_sn=device_sn,
-            date_text=day_text,
+            day_text=day_text,
             page=page,
         )
 
@@ -323,12 +236,11 @@ def fetch_recent_faults(
 ) -> list[dict]:
     now = datetime.now(TIMEZONE)
     days = [now.date(), (now - timedelta(days=1)).date()]
-
-    merged: dict[tuple[str, str], dict] = {}
+    merged = {}
 
     for day in days:
         day_text = day.isoformat()
-        print(f"Consultando Fault Log de {day_text}...")
+        print(f"Consultando Fault Log de {day_text}")
 
         for fault in fetch_faults_for_day(
             session=session,
@@ -336,28 +248,25 @@ def fetch_recent_faults(
             device_sn=device_sn,
             day_text=day_text,
         ):
-            code = str(
+            raw_code = str(
                 fault.get("eventId")
                 or fault.get("eventCode")
                 or fault.get("alarmCode")
                 or ""
             )
             time_text = str(fault.get("time") or fault.get("startTime") or "")
-            merged[(code, time_text)] = fault
+            merged[(raw_code, time_text)] = fault
 
     return list(merged.values())
 
 
 def fetch_live_data() -> dict:
-    token = get_required("GROWATT_API_TOKEN")
-    device_sn = get_required("GROWATT_DEVICE_SN")
-
     response = requests.post(
         "https://openapi.growatt.com/v4/new-api/queryLastData",
-        headers={"token": token},
+        headers={"token": required_env("GROWATT_API_TOKEN")},
         data={
             "deviceType": "min",
-            "deviceSn": device_sn,
+            "deviceSn": required_env("GROWATT_DEVICE_SN"),
         },
         timeout=30,
     )
@@ -371,13 +280,53 @@ def fetch_live_data() -> dict:
         raise RuntimeError(f"queryLastData falhou: {payload}")
 
     devices = ((payload.get("data") or {}).get("min") or [])
-    if not devices:
-        return {}
-
-    return devices[0]
+    return devices[0] if devices else {}
 
 
-def br_number(value, decimals: int = 1) -> str:
+def live_data_is_fresh_and_normal(live: dict) -> bool:
+    if not live:
+        return False
+
+    live_time = parse_growatt_datetime(live.get("time"))
+    if live_time is None:
+        return False
+
+    max_age = timedelta(
+        minutes=int_env("FAULT_LIVE_MAX_AGE_MINUTES", 30)
+    )
+    if datetime.now(TIMEZONE) - live_time > max_age:
+        return False
+
+    if live.get("lost") is True:
+        return False
+
+    values = (
+        live.get("faultType"),
+        live.get("sysFaultWord"),
+        live.get("warnCode"),
+        live.get("newWarnCode"),
+    )
+    has_fault = any(int(value or 0) != 0 for value in values)
+
+    return int(live.get("status") or 0) == 1 and not has_fault
+
+
+def event_is_recent(fault: dict) -> bool:
+    event_time = parse_growatt_datetime(
+        fault.get("time") or fault.get("startTime")
+    )
+    if event_time is None:
+        return False
+
+    age = datetime.now(TIMEZONE) - event_time
+    max_age = timedelta(
+        minutes=int_env("FAULT_NOTIFY_MAX_AGE_MINUTES", 120)
+    )
+
+    return timedelta(0) <= age <= max_age
+
+
+def format_number(value, decimals: int = 1) -> str:
     try:
         return (
             f"{float(value):,.{decimals}f}"
@@ -385,8 +334,15 @@ def br_number(value, decimals: int = 1) -> str:
             .replace(".", ",")
             .replace("X", ".")
         )
-    except Exception:
+    except (TypeError, ValueError):
         return "-"
+
+
+def format_event_time(value) -> str:
+    parsed = parse_growatt_datetime(value)
+    if parsed:
+        return parsed.strftime("%d/%m/%Y às %H:%M")
+    return str(value or "-")
 
 
 def build_fault_message(fault: dict, live: dict) -> str:
@@ -397,82 +353,83 @@ def build_fault_message(fault: dict, live: dict) -> str:
         or ""
     ).strip()
     code = normalize_fault_code(raw_code)
-
-    original_message = str(
-        fault.get("eventName")
-        or fault.get("faultDescription")
-        or fault.get("alarmMessage")
-        or "Falha Growatt"
-    ).strip()
-
-    event_time = parse_growatt_datetime(
-        fault.get("time") or fault.get("startTime")
-    )
-    event_time_text = (
-        event_time.strftime("%d/%m/%Y às %H:%M")
-        if event_time
-        else str(fault.get("time") or fault.get("startTime") or "-")
-    )
-
-    info = FAULT_INFO.get(code)
-    title = info["title"] if info else original_message
-    explanation = (
-        info["explanation"]
-        if info
-        else "A Growatt registrou uma nova falha no inversor."
-    )
+    message = translated_message(fault)
+    recovery_time = fault.get("recoveryTime") or fault.get("endTime")
 
     lines = [
-        "🚨 SolCare — Nova falha na usina solar",
+        "SolCare - Nova falha na usina solar",
         "",
-        f"⚠️ Erro {raw_code or code} — {title}",
-        f"🕐 Detectado em: {event_time_text}",
-        "",
-        explanation,
+        f"Erro {raw_code or code} - {message}",
+        f"Detectado em: {format_event_time(fault.get('time') or fault.get('startTime'))}",
     ]
+
+    guidance = ERROR_GUIDANCE_PT.get(code)
+    if guidance:
+        lines.extend(["", guidance])
+
+    if recovery_time:
+        lines.extend(
+            [
+                "",
+                f"A Growatt já registra normalização em: {format_event_time(recovery_time)}",
+            ]
+        )
 
     if live:
         lines.extend(
             [
                 "",
                 "Última telemetria disponível:",
-                f"• Status: {live.get('statusText') or live.get('status') or '-'}",
-                f"• Tensão AC: {br_number(live.get('vac1'), 1)} V",
-                f"• Frequência: {br_number(live.get('fac'), 1)} Hz",
-                f"• Potência AC: {br_number(live.get('pac'), 0)} W",
-                f"• Horário: {live.get('time') or '-'}",
+                f"Status: {live.get('statusText') or live.get('status') or '-'}",
+                f"Tensão AC: {format_number(live.get('vac1'), 1)} V",
+                f"Frequência: {format_number(live.get('fac'), 1)} Hz",
+                f"Potência AC: {format_number(live.get('pac'), 0)} W",
+                f"Horário: {live.get('time') or '-'}",
             ]
         )
 
     return "\n".join(lines)
 
 
-def should_notify_fault(fault: dict) -> bool:
-    event_time = parse_growatt_datetime(
-        fault.get("time") or fault.get("startTime")
-    )
-    if event_time is None:
-        return False
+def duration_text(started_at: datetime, resolved_at: datetime) -> str:
+    start = started_at.replace(tzinfo=TIMEZONE) if started_at.tzinfo is None else started_at
+    end = resolved_at.replace(tzinfo=TIMEZONE) if resolved_at.tzinfo is None else resolved_at
+    minutes = max(int((end - start).total_seconds() // 60), 0)
 
-    max_age_minutes = get_int(
-        "FAULT_NOTIFY_MAX_AGE_MINUTES",
-        DEFAULT_NOTIFY_MAX_AGE_MINUTES,
-    )
+    if minutes < 60:
+        return f"{minutes} min"
 
-    age = datetime.now(TIMEZONE) - event_time
-    return timedelta(0) <= age <= timedelta(minutes=max_age_minutes)
+    hours, remaining = divmod(minutes, 60)
+    return f"{hours}h {remaining}min"
 
 
-def notify_fault(fault: dict) -> None:
-    try:
-        live = fetch_live_data()
-    except Exception as exc:
-        print(f"Aviso: não consegui enriquecer o alerta com telemetria V4: {exc}")
-        live = {}
+def build_recovery_message(fault: dict, resolved_at: datetime, live: dict) -> str:
+    code = str(fault["fault_code_raw"] or fault["fault_code"])
+    message = str(fault.get("fault_message") or "Falha Growatt")
 
-    message = build_fault_message(fault, live)
-    print(message)
+    lines = [
+        "SolCare - Sistema normalizado",
+        "",
+        f"Falha {code} - {message}",
+        f"Início: {format_event_time(fault['fault_time'])}",
+        f"Normalização: {format_event_time(resolved_at)}",
+        f"Duração: {duration_text(fault['fault_time'], resolved_at)}",
+    ]
 
+    if live:
+        lines.extend(
+            [
+                "",
+                f"Status atual: {live.get('statusText') or live.get('status') or '-'}",
+                f"Tensão AC: {format_number(live.get('vac1'), 1)} V",
+                f"Frequência: {format_number(live.get('fac'), 1)} Hz",
+            ]
+        )
+
+    return "\n".join(lines)
+
+
+def send_message(message: str) -> None:
     send_whatsapp_to(
         env("WHATSAPP_PHONE", required=True),
         env("WHATSAPP_APIKEY", required=True),
@@ -480,14 +437,141 @@ def notify_fault(fault: dict) -> None:
     )
 
 
-def main() -> None:
-    station_id = get_required("GROWATT_PLANT_ID")
-    device_sn = get_required("GROWATT_DEVICE_SN")
+def import_faults(
+    faults: list[dict],
+    station_id: str,
+    device_sn: str,
+    live: dict,
+) -> None:
+    for fault in sorted(
+        faults,
+        key=lambda item: str(item.get("time") or item.get("startTime") or ""),
+    ):
+        event_time = parse_growatt_datetime(
+            fault.get("time") or fault.get("startTime")
+        )
+        if event_time is None:
+            print("Ignorando evento sem horário válido")
+            continue
 
-    ensure_fault_table()
+        recovery_time = parse_growatt_datetime(
+            fault.get("recoveryTime") or fault.get("endTime")
+        )
+        recent = event_is_recent(fault)
+
+        if recovery_time:
+            initial_status = "resolved"
+        elif recent:
+            initial_status = "active"
+        else:
+            initial_status = "historical"
+
+        record, created = upsert_growatt_fault_event(
+            station_id=station_id,
+            device_sn=device_sn,
+            fault_code=normalize_fault_code(
+                fault.get("eventId")
+                or fault.get("eventCode")
+                or fault.get("alarmCode")
+            ),
+            fault_code_raw=str(
+                fault.get("eventId")
+                or fault.get("eventCode")
+                or fault.get("alarmCode")
+                or ""
+            ).strip(),
+            fault_message=translated_message(fault),
+            fault_time=event_time.replace(tzinfo=None),
+            recovery_time=(
+                recovery_time.replace(tzinfo=None)
+                if recovery_time
+                else None
+            ),
+            device_type=str(fault.get("deviceType") or "").strip(),
+            solution=str(
+                fault.get("solution")
+                or fault.get("eventSolution")
+                or ""
+            ).strip(),
+            raw_payload=fault,
+            initial_status=initial_status,
+        )
+
+        if not created or not recent:
+            continue
+
+        send_message(build_fault_message(fault, live))
+        mark_growatt_fault_notified(record["id"])
+
+        if recovery_time:
+            mark_growatt_fault_recovery_notified(record["id"])
+
+
+def resolve_faults_from_log(live: dict) -> None:
+    active_faults = fetch_active_growatt_faults()
+
+    for fault in active_faults:
+        recovery_time = fault.get("recovery_time")
+        if not recovery_time:
+            continue
+
+        mark_growatt_fault_resolved(
+            event_id=fault["id"],
+            resolved_at=recovery_time,
+        )
+
+        if fault.get("notified_at") and not fault.get("recovery_notified_at"):
+            send_message(
+                build_recovery_message(
+                    fault=fault,
+                    resolved_at=recovery_time,
+                    live=live,
+                )
+            )
+            mark_growatt_fault_recovery_notified(fault["id"])
+
+
+def confirm_recovery_with_live_data(live: dict) -> None:
+    active_faults = fetch_active_growatt_faults()
+    if not active_faults:
+        return
+
+    if not live_data_is_fresh_and_normal(live):
+        reset_growatt_fault_normal_checks()
+        return
+
+    required_checks = int_env("FAULT_RECOVERY_CONFIRMATIONS", 2)
+
+    for fault in active_faults:
+        if fault.get("recovery_time"):
+            continue
+
+        normal_checks = increment_growatt_fault_normal_check(fault["id"])
+        if normal_checks < required_checks:
+            continue
+
+        resolved_at = datetime.now(TIMEZONE)
+        mark_growatt_fault_resolved(
+            event_id=fault["id"],
+            resolved_at=resolved_at.replace(tzinfo=None),
+        )
+
+        if fault.get("notified_at") and not fault.get("recovery_notified_at"):
+            send_message(
+                build_recovery_message(
+                    fault=fault,
+                    resolved_at=resolved_at,
+                    live=live,
+                )
+            )
+            mark_growatt_fault_recovery_notified(fault["id"])
+
+
+def main() -> None:
+    station_id = required_env("GROWATT_PLANT_ID")
+    device_sn = required_env("GROWATT_DEVICE_SN")
 
     session = growatt_login()
-
     try:
         faults = fetch_recent_faults(
             session=session,
@@ -498,50 +582,30 @@ def main() -> None:
         server = os.getenv("GROWATT_WEB_SERVER", DEFAULT_WEB_SERVER).strip().rstrip("/")
         try:
             session.get(f"{server}/logout", timeout=10)
-        except Exception:
+        except requests.RequestException:
             pass
 
-    if not faults:
-        print("Nenhuma falha encontrada nos últimos dois dias.")
-        return
+    try:
+        live = fetch_live_data()
+    except Exception as exc:
+        print(f"Telemetria V4 indisponível: {exc}")
+        live = {}
 
-    faults.sort(
-        key=lambda item: str(item.get("time") or item.get("startTime") or "")
+    import_faults(
+        faults=faults,
+        station_id=station_id,
+        device_sn=device_sn,
+        live=live,
     )
 
-    new_events = 0
-    notified_events = 0
-
-    for fault in faults:
-        event_id, created = upsert_fault_event(
-            station_id=station_id,
-            device_sn=device_sn,
-            fault=fault,
-        )
-
-        if not created:
-            continue
-
-        new_events += 1
-
-        if not should_notify_fault(fault):
-            print(
-                "Evento novo importado sem notificação por ser antigo:",
-                fault.get("eventId"),
-                fault.get("time"),
-            )
-            continue
-
-        notify_fault(fault)
-        mark_notified(event_id)
-        notified_events += 1
+    resolve_faults_from_log(live)
+    confirm_recovery_with_live_data(live)
 
     print(
-        "Monitoramento concluído:",
+        "Monitoramento concluído",
         {
             "faults_found": len(faults),
-            "new_events": new_events,
-            "notifications_sent": notified_events,
+            "live_status": live.get("statusText") if live else None,
         },
     )
 
