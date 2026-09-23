@@ -20,7 +20,6 @@ from whatsapp import send_whatsapp_to
 
 
 TIMEZONE = ZoneInfo("America/Bahia")
-DEFAULT_WEB_SERVER = "https://openapi.growatt.com"
 
 ERROR_MESSAGES_PT = {
     "200": "Falha AFCI: possível arco elétrico no circuito fotovoltaico",
@@ -446,6 +445,7 @@ def confirm_recovery_with_live_data(live: dict) -> None:
             event_id=fault["id"],
             resolved_at=resolved_at.replace(tzinfo=None),
         )
+
 
 def send_pending_recovery_notifications(live: dict) -> None:
     for fault in fetch_pending_growatt_recovery_notifications():
