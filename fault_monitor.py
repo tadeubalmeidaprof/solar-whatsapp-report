@@ -10,6 +10,7 @@ import requests
 from database import (
     fetch_active_growatt_faults,
     fetch_pending_growatt_recovery_notifications,
+    ensure_growatt_fault_events_table,
     increment_growatt_fault_normal_check,
     mark_growatt_fault_notified,
     mark_growatt_fault_recovery_notified,
@@ -628,6 +629,8 @@ def send_pending_recovery_notifications(live: dict) -> None:
 def main() -> None:
     station_id = required_env("GROWATT_PLANT_ID")
     device_sn = required_env("GROWATT_DEVICE_SN")
+
+    ensure_growatt_fault_events_table()
 
     session = growatt_login()
     try:
