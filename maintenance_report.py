@@ -11,6 +11,7 @@ from database import (
     fetch_open_maintenance_alert,
     mark_integrator_notified,
     resolve_open_maintenance_alerts,
+    resolve_other_open_maintenance_alerts,
     save_daily_generation,
     save_daily_weather,
 )
@@ -151,6 +152,15 @@ def main() -> None:
         return
 
     alert_type = str(analysis["alert_type"])
+
+    resolved_other_count = resolve_other_open_maintenance_alerts(
+        provider=PROVIDER,
+        station_id=station_id,
+        current_alert_type=alert_type,
+    )
+    if resolved_other_count:
+        print(f"Alertas anteriores de outro tipo resolvidos: {resolved_other_count}")
+
     existing_alert = fetch_open_maintenance_alert(
         provider=PROVIDER,
         station_id=station_id,
@@ -177,7 +187,21 @@ def main() -> None:
         return
 
     if status == "pending_confirmation":
-        confirm_maintenance_alert(alert_id)
+        previous_reference_end = existing_alert.get("reference_end_date")
+        current_reference_end = analysis.get("reference_end_date")
+
+        if (
+            previous_reference_end
+            and current_reference_end
+            and current_reference_end <= previous_reference_end
+        ):
+            print(
+                f"Alerta {alert_id} continua aguardando confirmação "
+                "com dados de um período posterior."
+            )
+            return
+
+        confirm_maintenance_alert(alert_id, analysis)
         status = "confirmed"
         print(f"Alerta {alert_id} confirmado por nova detecção.")
 
