@@ -557,6 +557,26 @@ def fetch_active_growatt_faults() -> list[dict[str, Any]]:
     return [dict(row) for row in rows]
 
 
+def fetch_pending_growatt_recovery_notifications() -> list[dict[str, Any]]:
+    ensure_growatt_fault_events_table()
+
+    query = """
+        SELECT *
+        FROM growatt_fault_events
+        WHERE status = 'resolved'
+          AND notified_at IS NOT NULL
+          AND recovery_notified_at IS NULL
+        ORDER BY recovery_time ASC;
+    """
+
+    with connect() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(query)
+            rows = cursor.fetchall()
+
+    return [dict(row) for row in rows]
+
+
 def mark_growatt_fault_notified(event_id: int) -> None:
     query = """
         UPDATE growatt_fault_events
