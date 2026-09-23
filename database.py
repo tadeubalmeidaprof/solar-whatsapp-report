@@ -419,6 +419,7 @@ def ensure_growatt_fault_events_table() -> None:
             raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
             status TEXT NOT NULL DEFAULT 'active',
             normal_checks INTEGER NOT NULL DEFAULT 0,
+            last_normal_live_time TIMESTAMP,
             notified_at TIMESTAMPTZ,
             recovery_notified_at TIMESTAMPTZ,
             resolved_at TIMESTAMP,
@@ -582,28 +583,50 @@ def mark_growatt_fault_recovery_notified(event_id: int) -> None:
             cursor.execute(query, (event_id,))
 
 
-def increment_growatt_fault_normal_check(event_id: int) -> int:
+def increment_growatt_fault_normal_check(event_id: int, live_time) -> int:
     query = """
         UPDATE growatt_fault_events
         SET normal_checks = normal_checks + 1,
+            last_normal_live_time = %s,
             updated_at = NOW()
         WHERE id = %s
           AND status = 'active'
+          AND (
+              last_normal_live_time IS NULL
+              OR last_normal_live_time <> %s
+          )
         RETURNING normal_checks;
     """
 
     with connect() as conn:
         with conn.cursor() as cursor:
-            cursor.execute(query, (event_id,))
+            cursor.execute(
+                query,
+                (live_time, event_id, live_time),
+            )
             row = cursor.fetchone()
 
-    return int(row[0]) if row else 0
+            if row:
+                return int(row[0])
+
+            cursor.execute(
+                """
+                    SELECT normal_checks
+                    FROM growatt_fault_events
+                    WHERE id = %s;
+                """,
+                (event_id,),
+            )
+            existing = cursor.fetchone()
+
+    return int(existing[0]) if existing else 0
 
 
 def reset_growatt_fault_normal_checks() -> None:
     query = """
         UPDATE growatt_fault_events
         SET normal_checks = 0,
+            last_normal_live_time = NULL,
             updated_at = NOW()
         WHERE status = 'active'
           AND normal_checks <> 0;
@@ -621,6 +644,7 @@ def mark_growatt_fault_resolved(event_id: int, resolved_at) -> None:
             resolved_at = %s,
             recovery_time = COALESCE(recovery_time, %s),
             normal_checks = 0,
+            last_normal_live_time = NULL,
             updated_at = NOW()
         WHERE id = %s;
     """
