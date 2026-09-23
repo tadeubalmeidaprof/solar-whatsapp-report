@@ -402,7 +402,6 @@ def mark_integrator_notified(alert_id: int) -> None:
             cursor.execute(query, (alert_id,))
 
 
-
 def ensure_growatt_fault_events_table() -> None:
     query = """
         CREATE TABLE IF NOT EXISTS growatt_fault_events (
@@ -417,7 +416,8 @@ def ensure_growatt_fault_events_table() -> None:
             device_type TEXT,
             solution TEXT,
             raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
-            status TEXT NOT NULL DEFAULT 'active',
+            status TEXT NOT NULL DEFAULT 'active'
+                CHECK (status IN ('historical', 'active', 'resolved')),
             normal_checks INTEGER NOT NULL DEFAULT 0,
             last_normal_live_time TIMESTAMP,
             notified_at TIMESTAMPTZ,
@@ -431,6 +431,9 @@ def ensure_growatt_fault_events_table() -> None:
         CREATE INDEX IF NOT EXISTS idx_growatt_fault_events_active
             ON growatt_fault_events (device_sn, status)
             WHERE status = 'active';
+
+        ALTER TABLE growatt_fault_events
+            ENABLE ROW LEVEL SECURITY;
     """
 
     with connect() as conn:
