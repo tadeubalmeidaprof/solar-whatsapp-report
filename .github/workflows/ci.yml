@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Compile
+        run: python -m compileall -q .
+
+      - name: Import smoke test
+        run: |
+          python - <<'PY'
+          import config
+          import fault_monitor
+          import growatt_client
+          import maintenance_report
+          import save_monthly_snapshot
+          import send_daily_report
+          import send_monthly_report
+          import whatsapp
+          PY
