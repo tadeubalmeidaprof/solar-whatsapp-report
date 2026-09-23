@@ -18,3 +18,15 @@ def to_decimal(value) -> Decimal:
 
 def round_money(value: Decimal) -> Decimal:
     return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def br_number(value, decimals: int = 1) -> str:
+    try:
+        return (
+            f"{float(value):,.{decimals}f}"
+            .replace(",", "X")
+            .replace(".", ",")
+            .replace("X", ".")
+        )
+    except (TypeError, ValueError):
+        return "0,0"
