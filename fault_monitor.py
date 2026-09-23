@@ -9,6 +9,7 @@ import requests
 
 from database import (
     fetch_active_growatt_faults,
+    fetch_pending_growatt_recovery_notifications,
     increment_growatt_fault_normal_check,
     mark_growatt_fault_notified,
     mark_growatt_fault_recovery_notified,
@@ -556,7 +557,7 @@ def import_faults(
             mark_growatt_fault_recovery_notified(record["id"])
 
 
-def resolve_faults_from_log(live: dict) -> None:
+def resolve_faults_from_log() -> None:
     active_faults = fetch_active_growatt_faults()
 
     for fault in active_faults:
@@ -568,16 +569,6 @@ def resolve_faults_from_log(live: dict) -> None:
             event_id=fault["id"],
             resolved_at=recovery_time,
         )
-
-        if fault.get("notified_at") and not fault.get("recovery_notified_at"):
-            send_message(
-                build_recovery_message(
-                    fault=fault,
-                    resolved_at=recovery_time,
-                    live=live,
-                )
-            )
-            mark_growatt_fault_recovery_notified(fault["id"])
 
 
 def confirm_recovery_with_live_data(live: dict) -> None:
@@ -618,15 +609,20 @@ def confirm_recovery_with_live_data(live: dict) -> None:
             resolved_at=resolved_at.replace(tzinfo=None),
         )
 
-        if fault.get("notified_at") and not fault.get("recovery_notified_at"):
-            send_message(
-                build_recovery_message(
-                    fault=fault,
-                    resolved_at=resolved_at,
-                    live=live,
-                )
+def send_pending_recovery_notifications(live: dict) -> None:
+    for fault in fetch_pending_growatt_recovery_notifications():
+        resolved_at = fault.get("recovery_time")
+        if not resolved_at:
+            continue
+
+        send_message(
+            build_recovery_message(
+                fault=fault,
+                resolved_at=resolved_at,
+                live=live,
             )
-            mark_growatt_fault_recovery_notified(fault["id"])
+        )
+        mark_growatt_fault_recovery_notified(fault["id"])
 
 
 def main() -> None:
@@ -660,8 +656,9 @@ def main() -> None:
         live=live,
     )
 
-    resolve_faults_from_log(live)
+    resolve_faults_from_log()
     confirm_recovery_with_live_data(live)
+    send_pending_recovery_notifications(live)
 
     print(
         "Monitoramento concluído",
