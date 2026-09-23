@@ -1,11 +1,7 @@
-import hashlib
-import json
 import os
 import re
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-
-import requests
 
 from database import (
     fetch_active_growatt_faults,
@@ -18,11 +14,12 @@ from database import (
     reset_growatt_fault_normal_checks,
     upsert_growatt_fault_event,
 )
-from send_daily_report import env, send_whatsapp_to
+from config import env, required_env
+from growatt_client import fetch_live_data, fetch_recent_faults
+from whatsapp import send_whatsapp_to
 
 
 TIMEZONE = ZoneInfo("America/Bahia")
-DEFAULT_WEB_SERVER = "https://openapi.growatt.com"
 
 ERROR_MESSAGES_PT = {
     "200": "Falha AFCI: possível arco elétrico no circuito fotovoltaico",
@@ -97,20 +94,9 @@ ERROR_GUIDANCE_PT = {
 }
 
 
-def required_env(name: str) -> str:
-    value = os.getenv(name, "").strip()
-    if not value:
-        raise RuntimeError(f"Variável {name} não configurada.")
-    return value
-
-
 def int_env(name: str, default: int) -> int:
     value = os.getenv(name, "").strip()
     return int(value) if value else default
-
-
-def web_server() -> str:
-    return os.getenv("GROWATT_WEB_SERVER", "").strip().rstrip("/") or DEFAULT_WEB_SERVER
 
 
 def normalize_fault_code(value) -> str:
@@ -182,157 +168,6 @@ def translated_message(fault: dict) -> str:
         or fault.get("alarmMessage")
         or "Falha Growatt"
     ).strip()
-
-
-def growatt_login() -> requests.Session:
-    username = required_env("GROWATT_USERNAME")
-    password = required_env("GROWATT_PASSWORD")
-    server = web_server()
-
-    session = requests.Session()
-    session.headers.update(
-        {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 Chrome/153 Safari/537.36"
-            ),
-            "Accept": "application/json, text/javascript, */*; q=0.01",
-        }
-    )
-
-    # O login web da Growatt exige o hash MD5 da senha no campo passwordCrc.
-    response = session.post(
-        f"{server}/login",
-        data={
-            "account": username,
-            "password": "",
-            "validateCode": "",
-            "isReadPact": "0",
-            "passwordCrc": hashlib.md5(password.encode("utf-8")).hexdigest(),
-        },
-        timeout=30,
-    )
-    response.raise_for_status()
-
-    payload = response.json()
-    if payload.get("result") != 1:
-        raise RuntimeError(f"Login Growatt recusado: {payload}")
-
-    session.headers.update({"Referer": f"{server}/index"})
-    return session
-
-
-def query_fault_page(
-    session: requests.Session,
-    station_id: str,
-    device_sn: str,
-    day_text: str,
-    page: int,
-) -> dict:
-    server = web_server()
-
-    response = session.post(
-        f"{server}/log/getNewPlantFaultLog",
-        data={
-            "plantId": station_id,
-            "date": day_text,
-            "deviceSn": device_sn,
-            "toPageNum": page,
-            "type": 1,
-        },
-        timeout=30,
-    )
-    response.raise_for_status()
-
-    payload = response.json()
-    if payload.get("result") != 1:
-        raise RuntimeError(f"Growatt recusou Fault Log: {payload}")
-
-    return payload
-
-
-def fetch_faults_for_day(
-    session: requests.Session,
-    station_id: str,
-    device_sn: str,
-    day_text: str,
-) -> list[dict]:
-    faults = []
-    page = 1
-
-    while True:
-        payload = query_fault_page(
-            session=session,
-            station_id=station_id,
-            device_sn=device_sn,
-            day_text=day_text,
-            page=page,
-        )
-
-        obj = payload.get("obj") or {}
-        faults.extend(obj.get("datas") or [])
-
-        total_pages = int(obj.get("pages") or 1)
-        if page >= total_pages:
-            break
-
-        page += 1
-
-    return faults
-
-
-def fetch_recent_faults(
-    session: requests.Session,
-    station_id: str,
-    device_sn: str,
-) -> list[dict]:
-    now = datetime.now(TIMEZONE)
-    days = [now.date(), (now - timedelta(days=1)).date()]
-    merged = {}
-
-    for day in days:
-        day_text = day.isoformat()
-        print(f"Consultando Fault Log de {day_text}")
-
-        for fault in fetch_faults_for_day(
-            session=session,
-            station_id=station_id,
-            device_sn=device_sn,
-            day_text=day_text,
-        ):
-            raw_code = str(
-                fault.get("eventId")
-                or fault.get("eventCode")
-                or fault.get("alarmCode")
-                or ""
-            )
-            time_text = str(fault.get("time") or fault.get("startTime") or "")
-            merged[(raw_code, time_text)] = fault
-
-    return list(merged.values())
-
-
-def fetch_live_data() -> dict:
-    response = requests.post(
-        "https://openapi.growatt.com/v4/new-api/queryLastData",
-        headers={"token": required_env("GROWATT_API_TOKEN")},
-        data={
-            "deviceType": "min",
-            "deviceSn": required_env("GROWATT_DEVICE_SN"),
-        },
-        timeout=30,
-    )
-    response.raise_for_status()
-
-    payload = response.json()
-    if isinstance(payload, str):
-        payload = json.loads(payload)
-
-    if payload.get("code") != 0:
-        raise RuntimeError(f"queryLastData falhou: {payload}")
-
-    devices = ((payload.get("data") or {}).get("min") or [])
-    return devices[0] if devices else {}
 
 
 def live_data_is_fresh_and_normal(live: dict) -> bool:
@@ -611,6 +446,7 @@ def confirm_recovery_with_live_data(live: dict) -> None:
             resolved_at=resolved_at.replace(tzinfo=None),
         )
 
+
 def send_pending_recovery_notifications(live: dict) -> None:
     for fault in fetch_pending_growatt_recovery_notifications():
         resolved_at = fault.get("recovery_time")
@@ -633,19 +469,10 @@ def main() -> None:
 
     ensure_growatt_fault_events_table()
 
-    session = growatt_login()
-    try:
-        faults = fetch_recent_faults(
-            session=session,
-            station_id=station_id,
-            device_sn=device_sn,
-        )
-    finally:
-        server = web_server()
-        try:
-            session.get(f"{server}/logout", timeout=10)
-        except requests.RequestException:
-            pass
+    faults = fetch_recent_faults(
+        station_id=station_id,
+        device_sn=device_sn,
+    )
 
     try:
         live = fetch_live_data()

@@ -2,7 +2,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from database import save_monthly_generation_snapshot
-from send_daily_report import fetch_growatt_payload
+from growatt_client import fetch_growatt_payload
 
 
 REPORT_TIMEZONE = ZoneInfo("America/Bahia")

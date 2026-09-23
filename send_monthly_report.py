@@ -4,9 +4,11 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from zoneinfo import ZoneInfo
 
-from database import fetch_generation_for_month, to_decimal
+from config import env
+from database import fetch_generation_for_month
 from savings_calculator import calculate_savings_with_fio_b
-from send_daily_report import br_number, env, send_whatsapp_to
+from utils import br_number, to_decimal
+from whatsapp import send_whatsapp_to
 
 
 REPORT_TIMEZONE = ZoneInfo("America/Bahia")
