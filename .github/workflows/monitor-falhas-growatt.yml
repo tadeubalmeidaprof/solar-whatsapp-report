@@ -1,0 +1,47 @@
+name: Monitor de falhas Growatt
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: monitor-falhas-growatt
+  cancel-in-progress: true
+
+jobs:
+  monitorar-falhas:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Baixar arquivos do repositório
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Instalar dependências
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Monitorar falhas Growatt
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GROWATT_API_TOKEN: ${{ secrets.GROWATT_API_TOKEN }}
+          GROWATT_PLANT_ID: ${{ secrets.GROWATT_PLANT_ID }}
+          GROWATT_DEVICE_SN: ${{ secrets.GROWATT_DEVICE_SN }}
+          GROWATT_USERNAME: ${{ secrets.GROWATT_USERNAME }}
+          GROWATT_PASSWORD: ${{ secrets.GROWATT_PASSWORD }}
+          GROWATT_WEB_SERVER: ${{ secrets.GROWATT_WEB_SERVER }}
+          WHATSAPP_PHONE: ${{ secrets.WHATSAPP_PHONE }}
+          WHATSAPP_APIKEY: ${{ secrets.WHATSAPP_APIKEY }}
+          FAULT_NOTIFY_MAX_AGE_MINUTES: ${{ secrets.FAULT_NOTIFY_MAX_AGE_MINUTES }}
+          FAULT_LIVE_MAX_AGE_MINUTES: ${{ secrets.FAULT_LIVE_MAX_AGE_MINUTES }}
+          FAULT_RECOVERY_CONFIRMATIONS: ${{ secrets.FAULT_RECOVERY_CONFIRMATIONS }}
+        run: python fault_monitor.py
