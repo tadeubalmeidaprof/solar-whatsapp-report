@@ -15,11 +15,11 @@ from database import (
     save_daily_generation,
     save_daily_weather,
 )
-from config import env
+from config import env, required_env
 from growatt_client import fetch_growatt_payload
 from maintenance import analyze_maintenance_need
 from weather import get_daily_weather
-from whatsapp import send_whatsapp_to
+from whatsapp import send_green_api
 
 
 REPORT_TIMEZONE = ZoneInfo("America/Bahia")
@@ -216,10 +216,12 @@ def main() -> None:
     print("Mensagem de alerta para a integradora:")
     print(message)
 
-    send_whatsapp_to(
-        env("WHATSAPP_PHONE", required=True),
-        env("WHATSAPP_APIKEY", required=True),
-        message,
+    send_green_api(
+        api_url=env("GREEN_API_URL"),
+        id_instance=required_env("GREEN_API_ID"),
+        api_token=required_env("GREEN_API_TOKEN"),
+        chat_id=required_env("GREEN_API_CHAT_ID"),
+        message=message,
     )
 
     mark_integrator_notified(alert_id)

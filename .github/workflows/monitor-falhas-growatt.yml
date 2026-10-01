@@ -39,8 +39,10 @@ jobs:
           GROWATT_USERNAME: ${{ secrets.GROWATT_USERNAME }}
           GROWATT_PASSWORD: ${{ secrets.GROWATT_PASSWORD }}
           GROWATT_WEB_SERVER: ${{ secrets.GROWATT_WEB_SERVER }}
-          WHATSAPP_PHONE: ${{ secrets.WHATSAPP_PHONE }}
-          WHATSAPP_APIKEY: ${{ secrets.WHATSAPP_APIKEY }}
+          GREEN_API_URL: ${{ secrets.GREEN_API_URL }}
+          GREEN_API_ID: ${{ secrets.GREEN_API_ID }}
+          GREEN_API_TOKEN: ${{ secrets.GREEN_API_TOKEN }}
+          GREEN_API_CHAT_ID: ${{ secrets.GREEN_API_CHAT_ID }}
           FAULT_NOTIFY_MAX_AGE_MINUTES: ${{ secrets.FAULT_NOTIFY_MAX_AGE_MINUTES }}
           FAULT_LIVE_MAX_AGE_MINUTES: ${{ secrets.FAULT_LIVE_MAX_AGE_MINUTES }}
           FAULT_RECOVERY_CONFIRMATIONS: ${{ secrets.FAULT_RECOVERY_CONFIRMATIONS }}

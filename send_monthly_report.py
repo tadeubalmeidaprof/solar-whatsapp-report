@@ -4,11 +4,11 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from zoneinfo import ZoneInfo
 
-from config import env
+from config import env, required_env
 from database import fetch_generation_for_month
 from savings_calculator import calculate_savings_with_fio_b
 from utils import br_number, to_decimal
-from whatsapp import send_whatsapp_to
+from whatsapp import send_green_api, send_whatsapp_to
 
 
 REPORT_TIMEZONE = ZoneInfo("America/Bahia")
@@ -173,11 +173,19 @@ def main():
     print("Mensagem mensal para Tadeu:")
     print(message_tadeu)
 
-    send_whatsapp_to(
-        env("WHATSAPP_PHONE", required=True),
-        env("WHATSAPP_APIKEY", required=True),
-        message_tadeu,
-    )
+    send_errors = []
+
+    try:
+        send_green_api(
+            api_url=env("GREEN_API_URL"),
+            id_instance=required_env("GREEN_API_ID"),
+            api_token=required_env("GREEN_API_TOKEN"),
+            chat_id=required_env("GREEN_API_CHAT_ID"),
+            message=message_tadeu,
+        )
+    except Exception as exc:
+        send_errors.append(f"GREEN-API: {exc}")
+        print(f"Falha ao enviar para Tadeu pela GREEN-API: {exc}")
 
     if should_send_to_second_person():
         message_rangel = build_monthly_message(
@@ -192,13 +200,22 @@ def main():
         print("Mensagem mensal para Rangel:")
         print(message_rangel)
 
-        send_whatsapp_to(
-            env("WHATSAPP_PHONE_2"),
-            env("WHATSAPP_APIKEY_2"),
-            message_rangel,
-        )
+        try:
+            send_whatsapp_to(
+                env("WHATSAPP_PHONE_2"),
+                env("WHATSAPP_APIKEY_2"),
+                message_rangel,
+            )
+        except Exception as exc:
+            send_errors.append(f"CallMeBot: {exc}")
+            print(f"Falha ao enviar para Rangel pelo CallMeBot: {exc}")
     else:
         print("Segundo número não configurado. Enviado apenas para o número principal.")
+
+    if send_errors:
+        raise RuntimeError(
+            "Falha em um ou mais envios de WhatsApp: " + " | ".join(send_errors)
+        )
 
     print("Relatório mensal enviado com sucesso.")
 
