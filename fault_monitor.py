@@ -16,7 +16,7 @@ from database import (
 )
 from config import env, required_env
 from growatt_client import fetch_live_data, fetch_recent_faults
-from whatsapp import send_whatsapp_to
+from whatsapp import send_green_api
 
 
 TIMEZONE = ZoneInfo("America/Bahia")
@@ -317,10 +317,12 @@ def build_recovery_message(fault: dict, resolved_at: datetime, live: dict) -> st
 
 
 def send_message(message: str) -> None:
-    send_whatsapp_to(
-        env("WHATSAPP_PHONE", required=True),
-        env("WHATSAPP_APIKEY", required=True),
-        message,
+    send_green_api(
+        api_url=env("GREEN_API_URL"),
+        id_instance=required_env("GREEN_API_ID"),
+        api_token=required_env("GREEN_API_TOKEN"),
+        chat_id=required_env("GREEN_API_CHAT_ID"),
+        message=message,
     )
 
 
