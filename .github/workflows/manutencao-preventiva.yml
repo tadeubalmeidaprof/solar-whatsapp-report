@@ -39,8 +39,10 @@ jobs:
           GROWATT_SERVER_URL: ${{ secrets.GROWATT_SERVER_URL }}
           STATION_LATITUDE: ${{ secrets.STATION_LATITUDE }}
           STATION_LONGITUDE: ${{ secrets.STATION_LONGITUDE }}
-          WHATSAPP_PHONE: ${{ secrets.WHATSAPP_PHONE }}
-          WHATSAPP_APIKEY: ${{ secrets.WHATSAPP_APIKEY }}
+          GREEN_API_URL: ${{ secrets.GREEN_API_URL }}
+          GREEN_API_ID: ${{ secrets.GREEN_API_ID }}
+          GREEN_API_TOKEN: ${{ secrets.GREEN_API_TOKEN }}
+          GREEN_API_CHAT_ID: ${{ secrets.GREEN_API_CHAT_ID }}
           MAINTENANCE_HISTORY_DAYS: ${{ secrets.MAINTENANCE_HISTORY_DAYS }}
           MAINTENANCE_RECENT_DAYS: ${{ secrets.MAINTENANCE_RECENT_DAYS }}
           MAINTENANCE_BASELINE_DAYS: ${{ secrets.MAINTENANCE_BASELINE_DAYS }}
