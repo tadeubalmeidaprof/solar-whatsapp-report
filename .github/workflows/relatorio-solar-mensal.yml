@@ -42,8 +42,10 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           GROWATT_PLANT_ID: ${{ secrets.GROWATT_PLANT_ID }}
-          WHATSAPP_PHONE: ${{ secrets.WHATSAPP_PHONE }}
-          WHATSAPP_APIKEY: ${{ secrets.WHATSAPP_APIKEY }}
+          GREEN_API_URL: ${{ secrets.GREEN_API_URL }}
+          GREEN_API_ID: ${{ secrets.GREEN_API_ID }}
+          GREEN_API_TOKEN: ${{ secrets.GREEN_API_TOKEN }}
+          GREEN_API_CHAT_ID: ${{ secrets.GREEN_API_CHAT_ID }}
           WHATSAPP_PHONE_2: ${{ secrets.WHATSAPP_PHONE_2 }}
           WHATSAPP_APIKEY_2: ${{ secrets.WHATSAPP_APIKEY_2 }}
           ENERGY_TARIFF: ${{ secrets.ENERGY_TARIFF }}
