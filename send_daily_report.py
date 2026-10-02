@@ -34,10 +34,7 @@ Total gerado no mês: {br_number(month, 1)} kWh
 """
 
 
-def main() -> None:
-    payload = fetch_growatt_payload()
-    print("Payload Growatt:", payload)
-
+def send_daily_report(payload: dict) -> None:
     message_tadeu = build_message_tadeu(payload)
     message_pessoa2 = build_message_pessoa2(payload)
 
@@ -83,6 +80,12 @@ def main() -> None:
         )
 
     print("Relatório enviado com sucesso.")
+
+
+def main() -> None:
+    payload = fetch_growatt_payload()
+    print("Payload Growatt:", payload)
+    send_daily_report(payload)
 
 
 if __name__ == "__main__":
