@@ -20,6 +20,7 @@ def save_monthly_snapshot(payload: dict) -> None:
         station_id=station_id,
         report_date=today,
         generation_kwh=generation_month_kwh,
+        provider="Growatt",
     )
 
     print(
@@ -28,6 +29,7 @@ def save_monthly_snapshot(payload: dict) -> None:
             "station_id": station_id,
             "report_date": today.isoformat(),
             "generation_month_kwh": generation_month_kwh,
+            "provider": "Growatt",
         },
     )
 
