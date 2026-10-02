@@ -36,6 +36,7 @@ jobs:
         run: |
           python - <<'PY'
           import config
+          import daily_report_job
           import fault_monitor
           import growatt_client
           import maintenance_report
@@ -44,3 +45,6 @@ jobs:
           import send_monthly_report
           import whatsapp
           PY
+
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
