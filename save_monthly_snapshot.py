@@ -8,9 +8,7 @@ from growatt_client import fetch_growatt_payload
 REPORT_TIMEZONE = ZoneInfo("America/Bahia")
 
 
-def main():
-    payload = fetch_growatt_payload()
-
+def save_monthly_snapshot(payload: dict) -> None:
     station_id = str(payload.get("plantId") or "").strip()
     generation_month_kwh = float(payload.get("energyMonthKwh") or 0)
     today = datetime.now(REPORT_TIMEZONE).date()
@@ -32,6 +30,11 @@ def main():
             "generation_month_kwh": generation_month_kwh,
         },
     )
+
+
+def main() -> None:
+    payload = fetch_growatt_payload()
+    save_monthly_snapshot(payload)
 
 
 if __name__ == "__main__":
