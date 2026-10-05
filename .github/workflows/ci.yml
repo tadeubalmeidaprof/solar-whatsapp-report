@@ -35,6 +35,7 @@ jobs:
       - name: Import smoke test
         run: |
           python - <<'PY'
+          import bot
           import config
           import daily_report_job
           import fault_monitor
@@ -43,6 +44,8 @@ jobs:
           import save_monthly_snapshot
           import send_daily_report
           import send_monthly_report
+          import solar_queries
+          import webhook
           import whatsapp
           PY
 
