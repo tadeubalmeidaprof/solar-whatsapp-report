@@ -43,6 +43,10 @@ def authorized_chat_id() -> str:
     return required_env("AUTHORIZED_CHAT_ID")
 
 
+def reply_chat_id(incoming_chat_id: str) -> str:
+    return env("GREEN_API_REPLY_CHAT_ID") or incoming_chat_id
+
+
 def authorized_instance_id() -> str:
     return required_env("GREEN_API_ID")
 
@@ -242,11 +246,13 @@ def process_message(chat_id: str, body: str) -> None:
             logger.info("Mensagem ignorada de chat não autorizado.")
             return
 
+        target_chat_id = reply_chat_id(chat_id)
+
         if is_menu_request(body):
-            _send_menu(chat_id)
+            _send_menu(target_chat_id)
             return
 
-        _send_text(chat_id, build_reply(body))
+        _send_text(target_chat_id, build_reply(body))
         logger.info("Resposta do bot enviada pela GREEN-API.")
     except Exception:
         logger.exception("Falha ao processar mensagem recebida da GREEN-API.")

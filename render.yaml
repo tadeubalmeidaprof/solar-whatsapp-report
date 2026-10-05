@@ -9,6 +9,8 @@ services:
     envVars:
       - key: AUTHORIZED_CHAT_ID
         sync: false
+      - key: GREEN_API_REPLY_CHAT_ID
+        sync: false
       - key: GREEN_API_URL
         value: https://api.green-api.com
       - key: GREEN_API_ID
