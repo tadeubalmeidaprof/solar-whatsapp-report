@@ -5,11 +5,13 @@ import webhook
 
 
 AUTHORIZED_CHAT_ID = "5511999999999@c.us"
+REPLY_CHAT_ID = "10257136906457@lid"
 INSTANCE_ID = "123456"
 WEBHOOK_TOKEN = "secret-test"
 
 BASE_ENV = {
     "AUTHORIZED_CHAT_ID": AUTHORIZED_CHAT_ID,
+    "GREEN_API_REPLY_CHAT_ID": REPLY_CHAT_ID,
     "GREEN_API_URL": "https://api.green-api.com",
     "GREEN_API_ID": INSTANCE_ID,
     "GREEN_API_TOKEN": "api-token-test",
@@ -206,6 +208,10 @@ class MessageProcessingTests(unittest.TestCase):
             webhook.process_message(AUTHORIZED_CHAT_ID, "Olá!")
 
         send_interactive.assert_called_once()
+        self.assertEqual(
+            send_interactive.call_args.kwargs["chat_id"],
+            REPLY_CHAT_ID,
+        )
         send_text.assert_not_called()
 
     @patch("webhook.send_green_api")
@@ -223,7 +229,38 @@ class MessageProcessingTests(unittest.TestCase):
             webhook.process_message(AUTHORIZED_CHAT_ID, "menu")
 
         send_interactive.assert_called_once()
+        self.assertEqual(
+            send_interactive.call_args.kwargs["chat_id"],
+            REPLY_CHAT_ID,
+        )
         send_text.assert_called_once()
+        self.assertEqual(
+            send_text.call_args.kwargs["chat_id"],
+            REPLY_CHAT_ID,
+        )
+
+    @patch("webhook.send_green_api")
+    @patch("webhook.send_green_api_interactive")
+    def test_reply_falls_back_to_incoming_chat_when_not_configured(
+        self,
+        send_interactive,
+        send_text,
+    ):
+        env_without_reply = {
+            key: value
+            for key, value in BASE_ENV.items()
+            if key != "GREEN_API_REPLY_CHAT_ID"
+        }
+
+        with patch.dict("os.environ", env_without_reply, clear=True):
+            webhook.process_message(AUTHORIZED_CHAT_ID, "Olá!")
+
+        send_interactive.assert_called_once()
+        self.assertEqual(
+            send_interactive.call_args.kwargs["chat_id"],
+            AUTHORIZED_CHAT_ID,
+        )
+        send_text.assert_not_called()
 
     @patch("webhook.send_green_api")
     @patch("webhook.send_green_api_interactive")
