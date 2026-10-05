@@ -75,6 +75,31 @@ class WebhookParsingTests(unittest.TestCase):
             ),
         )
 
+    def test_extracts_interactive_buttons_response(self):
+        payload = {
+            "typeWebhook": "incomingMessageReceived",
+            "idMessage": "message-interactive-response",
+            "senderData": {"chatId": AUTHORIZED_CHAT_ID},
+            "messageData": {
+                "typeMessage": "interactiveButtonsResponse",
+                "interactiveButtonsResponse": {
+                    "stanzaId": "message-menu",
+                    "selectedIndex": 0,
+                    "selectedId": "generation_today",
+                    "selectedDisplayText": "☀️ Geração de hoje",
+                },
+            },
+        }
+
+        self.assertEqual(
+            webhook.extract_incoming_message(payload),
+            (
+                "message-interactive-response",
+                AUTHORIZED_CHAT_ID,
+                "generation_today",
+            ),
+        )
+
     def test_extracts_legacy_button_response(self):
         payload = {
             "typeWebhook": "incomingMessageReceived",
@@ -197,6 +222,42 @@ class WebhookSecurityTests(unittest.TestCase):
 
 
 class MessageProcessingTests(unittest.TestCase):
+    @patch("webhook._executor.submit")
+    def test_interactive_button_webhook_dispatches_selected_id(self, submit):
+        payload = {
+            "typeWebhook": "incomingMessageReceived",
+            "instanceData": {"idInstance": int(INSTANCE_ID)},
+            "idMessage": "message-interactive-dispatch",
+            "senderData": {"chatId": AUTHORIZED_CHAT_ID},
+            "messageData": {
+                "typeMessage": "interactiveButtonsResponse",
+                "interactiveButtonsResponse": {
+                    "stanzaId": "message-menu",
+                    "selectedIndex": 0,
+                    "selectedId": "generation_today",
+                    "selectedDisplayText": "☀️ Geração de hoje",
+                },
+            },
+        }
+
+        with patch.dict("os.environ", BASE_ENV, clear=True):
+            client = webhook.app.test_client()
+            response = client.post(
+                "/webhook/green-api",
+                headers={
+                    "Authorization": f"Bearer {WEBHOOK_TOKEN}",
+                },
+                json=payload,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        submit.assert_called_once_with(
+            webhook.process_message,
+            AUTHORIZED_CHAT_ID,
+            "generation_today",
+        )
+
+
     @patch("webhook.send_green_api")
     @patch("webhook.send_green_api_interactive")
     def test_greeting_sends_interactive_menu(
