@@ -120,6 +120,17 @@ def _extract_button_selection(message_data: dict) -> str:
                 or ""
             ).strip()
 
+    if message_type == "interactiveButtonsResponse":
+        data = message_data.get("interactiveButtonsResponse")
+        if isinstance(data, dict):
+            return str(
+                data.get("selectedId")
+                or data.get("selectedButtonId")
+                or data.get("buttonId")
+                or data.get("selectedDisplayText")
+                or ""
+            ).strip()
+
     if message_type in {
         "interactiveButtonsReply",
         "interactiveButtonReply",
@@ -295,6 +306,16 @@ def green_api_webhook():
 
     incoming = extract_incoming_message(payload)
     if incoming is None:
+        message_data = payload.get("messageData")
+        message_type = (
+            str(message_data.get("typeMessage") or "").strip()
+            if isinstance(message_data, dict)
+            else ""
+        )
+        logger.info(
+            "Webhook recebido sem conteúdo acionável: typeMessage=%s",
+            message_type or "desconhecido",
+        )
         return "", 200
 
     message_id, chat_id, body = incoming
