@@ -11,6 +11,7 @@ from solar_queries import (
     get_recent_generation,
     get_savings_summary,
     get_weather_summary,
+    get_weather_window_summary,
 )
 
 
@@ -262,6 +263,32 @@ class SolarQueriesPhase2Tests(unittest.TestCase):
 
         self.assertTrue(result["available"])
         self.assertEqual(result["source"], "open_meteo")
+
+    @patch("solar_queries.get_weather_window")
+    def test_weather_window_summary_uses_default_solar_window(self, get_window):
+        get_window.return_value = {
+            "available": True,
+            "window_label": "07:00-17:00",
+        }
+
+        with patch.dict(
+            "os.environ",
+            {
+                "STATION_LATITUDE": "-14.2",
+                "STATION_LONGITUDE": "-42.2",
+            },
+            clear=True,
+        ):
+            result = get_weather_window_summary("2026-10-07")
+
+        self.assertTrue(result["available"])
+        get_window.assert_called_once_with(
+            latitude=-14.2,
+            longitude=-42.2,
+            report_date=date(2026, 10, 7),
+            start_hour=7,
+            end_hour=17,
+        )
 
 
 if __name__ == "__main__":

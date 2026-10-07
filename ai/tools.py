@@ -9,6 +9,7 @@ from solar_queries import (
     get_plant_status,
     get_savings_summary,
     get_weather_summary,
+    get_weather_window_summary,
 )
 
 
@@ -151,8 +152,10 @@ TOOL_DEFINITIONS = [
         "function": {
             "name": "consultar_clima",
             "description": (
-                "Consulta o clima registrado para uma data e, para hoje, pode "
-                "consultar o Open-Meteo se ainda não houver registro."
+                "Consulta o clima em uma faixa horária de um dia. "
+                "Por padrão usa a janela solar de 07:00 até 17:00. "
+                "Retorna nebulosidade, chuva, temperatura e, quando o provedor "
+                "oferecer, horas de sol e radiação solar."
             ),
             "parameters": {
                 "type": "object",
@@ -160,6 +163,18 @@ TOOL_DEFINITIONS = [
                     "report_date": {
                         "type": "string",
                         "description": "Data no formato YYYY-MM-DD.",
+                    },
+                    "start_hour": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 23,
+                        "description": "Hora inicial. Padrão: 7.",
+                    },
+                    "end_hour": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 24,
+                        "description": "Hora final exclusiva. Padrão: 17.",
                     },
                 },
                 "required": ["report_date"],
@@ -228,9 +243,9 @@ _TOOL_HANDLERS = {
         {"year_month"},
     ),
     "consultar_clima": (
-        "get_weather_summary",
+        "get_weather_window_summary",
         {"report_date"},
-        {"report_date"},
+        {"report_date", "start_hour", "end_hour"},
     ),
     "explicar_codigo_falha": (
         "get_fault_code_info",

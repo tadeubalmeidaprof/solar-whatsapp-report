@@ -19,7 +19,7 @@ from savings_calculator import (
     calculate_savings_without_fio_b,
 )
 from utils import br_number, to_decimal
-from weather import get_daily_weather
+from weather import get_daily_weather, get_weather_window
 
 
 PROVIDER = "growatt"
@@ -627,6 +627,51 @@ def get_weather_summary(report_date: str) -> dict:
         }
 
     return _sanitize_weather(weather, parsed_date, "open_meteo")
+
+
+def get_weather_window_summary(
+    report_date: str,
+    start_hour: int = 7,
+    end_hour: int = 17,
+) -> dict:
+    parsed_date = _parse_date(report_date, "Data do clima")
+    today = datetime.now(REPORT_TIMEZONE).date()
+
+    if parsed_date > today:
+        raise ValueError("Não é possível consultar clima futuro nesta ferramenta.")
+
+    latitude_raw = env("STATION_LATITUDE")
+    longitude_raw = env("STATION_LONGITUDE")
+    if not latitude_raw or not longitude_raw:
+        return {
+            "available": False,
+            "date": parsed_date.isoformat(),
+            "reason": "station_location_not_configured",
+        }
+
+    try:
+        return get_weather_window(
+            latitude=float(latitude_raw.replace(",", ".")),
+            longitude=float(longitude_raw.replace(",", ".")),
+            report_date=parsed_date,
+            start_hour=start_hour,
+            end_hour=end_hour,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Falha ao consultar clima horário para %s (%s-%s): %s",
+            parsed_date.isoformat(),
+            start_hour,
+            end_hour,
+            exc,
+        )
+        return {
+            "available": False,
+            "date": parsed_date.isoformat(),
+            "start_hour": start_hour,
+            "end_hour": end_hour,
+            "reason": "weather_provider_unavailable",
+        }
 
 def get_fault_code_info(code: str) -> dict:
     normalized = str(code or "").strip()
