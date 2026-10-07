@@ -741,3 +741,165 @@ def mark_growatt_fault_resolved(event_id: int, resolved_at) -> None:
                 query,
                 (resolved_at, resolved_at, event_id),
             )
+
+# ---------------------------------------------------------------------------
+# Consultas do assistente conversacional
+# ---------------------------------------------------------------------------
+
+def fetch_daily_generation_range(
+    provider: str,
+    station_id: str,
+    start_date: date,
+    end_date: date,
+) -> list[dict[str, Any]]:
+    query = """
+        SELECT
+            report_date,
+            generation_day_kwh,
+            generation_month_kwh,
+            inverter_status
+        FROM daily_generation
+        WHERE provider = %s
+          AND station_id = %s
+          AND report_date BETWEEN %s AND %s
+        ORDER BY report_date ASC;
+    """
+
+    with connect() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(
+                query,
+                (
+                    provider,
+                    str(station_id),
+                    start_date.isoformat(),
+                    end_date.isoformat(),
+                ),
+            )
+            rows = cursor.fetchall()
+
+    return [dict(row) for row in rows]
+
+
+def fetch_daily_weather_for_date(
+    provider: str,
+    station_id: str,
+    report_date: date,
+) -> dict[str, Any] | None:
+    query = """
+        SELECT
+            DATARELATORIO AS report_date,
+            PERCENTUALNUVENS AS cloud_cover_percent,
+            CHUVAMM AS rainfall_mm,
+            RADIACAOSOLARWHM2 AS solar_radiation_wh_m2,
+            HORASSOL AS sunshine_hours,
+            TEMPERATURAMINIMAC AS temperature_min_c,
+            TEMPERATURAMAXIMAC AS temperature_max_c,
+            CLASSIFICACAOCLIMA AS weather_class
+        FROM daily_weather
+        WHERE FORNECEDOR = %s
+          AND IDUSINA = %s
+          AND DATARELATORIO = %s
+        LIMIT 1;
+    """
+
+    with connect() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(
+                query,
+                (
+                    provider,
+                    str(station_id),
+                    report_date.isoformat(),
+                ),
+            )
+            row = cursor.fetchone()
+
+    return dict(row) if row else None
+
+
+def fetch_ai_conversation_messages(
+    conversation_key: str,
+    limit: int = 8,
+) -> list[dict[str, str]]:
+    query = """
+        SELECT role, content
+        FROM ai_conversation_messages
+        WHERE conversation_key = %s
+        ORDER BY id DESC
+        LIMIT %s;
+    """
+
+    with connect() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+            cursor.execute(query, (conversation_key, int(limit)))
+            rows = cursor.fetchall()
+
+    return [
+        {
+            "role": str(row["role"]),
+            "content": str(row["content"]),
+        }
+        for row in reversed(rows)
+    ]
+
+
+def save_ai_conversation_message(
+    conversation_key: str,
+    role: str,
+    content: str,
+) -> None:
+    if role not in {"user", "assistant"}:
+        raise ValueError("role inválido para memória da IA.")
+
+    query = """
+        INSERT INTO ai_conversation_messages (
+            conversation_key,
+            role,
+            content
+        )
+        VALUES (%s, %s, %s);
+    """
+
+    with connect() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                query,
+                (
+                    conversation_key,
+                    role,
+                    str(content),
+                ),
+            )
+
+
+def prune_ai_conversation_messages(
+    conversation_key: str,
+    keep: int = 12,
+) -> None:
+    query = """
+        DELETE FROM ai_conversation_messages
+        WHERE conversation_key = %s
+          AND (
+              created_at < NOW() - INTERVAL '30 days'
+              OR id NOT IN (
+                  SELECT id
+                  FROM ai_conversation_messages
+                  WHERE conversation_key = %s
+                  ORDER BY id DESC
+                  LIMIT %s
+              )
+          );
+    """
+
+    with connect() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                query,
+                (
+                    conversation_key,
+                    conversation_key,
+                    int(keep),
+                ),
+            )
+

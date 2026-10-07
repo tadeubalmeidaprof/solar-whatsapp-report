@@ -1,7 +1,10 @@
 import json
 import logging
 import os
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
+from ai.memory import load_recent_messages, save_conversation_exchange
 from ai.prompt import SYSTEM_PROMPT
 from ai.provider import AIProviderError, AIRateLimitError, create_chat_completion
 from ai.tools import AIToolError, TOOL_DEFINITIONS, execute_tool
@@ -10,6 +13,7 @@ from ai.tools import AIToolError, TOOL_DEFINITIONS, execute_tool
 logger = logging.getLogger(__name__)
 MAX_TOOL_ROUNDS = 3
 MAX_INPUT_CHARS = 1200
+RUNTIME_TIMEZONE = ZoneInfo("America/Bahia")
 
 
 def _enabled() -> bool:
@@ -57,7 +61,16 @@ def _parse_arguments(raw_arguments) -> dict:
     return parsed
 
 
-def ask_solcare_ai(message: str) -> str | None:
+def _runtime_context() -> str:
+    now = datetime.now(RUNTIME_TIMEZONE)
+    return (
+        "Contexto temporal do SolCare: "
+        f"agora é {now.isoformat()}, fuso America/Bahia. "
+        "Use essa referência para resolver datas relativas."
+    )
+
+
+def ask_solcare_ai(message: str, chat_id: str = "") -> str | None:
     if not _enabled():
         return None
 
@@ -74,11 +87,13 @@ def ask_solcare_ai(message: str) -> str | None:
 
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": user_message},
+        {"role": "system", "content": _runtime_context()},
     ]
+    messages.extend(load_recent_messages(chat_id))
+    messages.append({"role": "user", "content": user_message})
 
     try:
-        for _ in range(MAX_TOOL_ROUNDS + 1):
+        for tool_round in range(MAX_TOOL_ROUNDS + 1):
             response_message = create_chat_completion(
                 messages=messages,
                 tools=TOOL_DEFINITIONS,
@@ -89,9 +104,15 @@ def ask_solcare_ai(message: str) -> str | None:
                 content = str(response_message.get("content") or "").strip()
                 if not content:
                     raise AIProviderError("Groq retornou uma resposta vazia.")
+
+                save_conversation_exchange(
+                    chat_id=chat_id,
+                    user_message=user_message,
+                    assistant_message=content,
+                )
                 return content
 
-            if len(messages) >= 2 + (MAX_TOOL_ROUNDS * 2):
+            if tool_round >= MAX_TOOL_ROUNDS:
                 raise AIProviderError("Limite de chamadas de ferramentas excedido.")
 
             assistant_message = {

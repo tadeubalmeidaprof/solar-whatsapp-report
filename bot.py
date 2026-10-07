@@ -56,7 +56,7 @@ def is_menu_request(message: str) -> bool:
     return normalize_text(message) in MENU_TRIGGERS
 
 
-def build_reply(message: str) -> str:
+def build_reply(message: str, chat_id: str = "") -> str:
     raw_value = str(message or "").strip().lower()
     normalized = normalize_text(message)
 
@@ -79,5 +79,5 @@ def build_reply(message: str) -> str:
             "Digite *menu* para ver as opções novamente."
         )
 
-    ai_reply = ask_solcare_ai(message)
+    ai_reply = ask_solcare_ai(message, chat_id=chat_id)
     return ai_reply or UNKNOWN_MESSAGE
