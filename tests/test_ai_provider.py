@@ -14,7 +14,7 @@ BASE_ENV = {
     "GROQ_API_KEY": "gsk_test",
     "GROQ_MODEL": "openai/gpt-oss-20b",
     "GROQ_TIMEOUT_SECONDS": "7",
-    "GROQ_MAX_COMPLETION_TOKENS": "300",
+    "GROQ_MAX_COMPLETION_TOKENS": "600",
 }
 
 
@@ -39,7 +39,9 @@ class AIProviderTests(unittest.TestCase):
         _, kwargs = post.call_args
         self.assertEqual(kwargs["timeout"], 7.0)
         self.assertEqual(kwargs["json"]["model"], "openai/gpt-oss-20b")
-        self.assertEqual(kwargs["json"]["max_completion_tokens"], 300)
+        self.assertEqual(kwargs["json"]["max_completion_tokens"], 600)
+        self.assertEqual(kwargs["json"]["reasoning_effort"], "low")
+        self.assertFalse(kwargs["json"]["parallel_tool_calls"])
         self.assertNotIn("gsk_test", str(kwargs["json"]))
         self.assertEqual(kwargs["headers"]["Authorization"], "Bearer gsk_test")
 

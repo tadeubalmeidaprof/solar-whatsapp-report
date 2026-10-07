@@ -6,7 +6,7 @@ import requests
 GROQ_CHAT_COMPLETIONS_URL = "https://api.groq.com/openai/v1/chat/completions"
 DEFAULT_MODEL = "openai/gpt-oss-20b"
 DEFAULT_TIMEOUT_SECONDS = 12.0
-DEFAULT_MAX_COMPLETION_TOKENS = 400
+DEFAULT_MAX_COMPLETION_TOKENS = 600
 
 
 class AIProviderError(RuntimeError):
@@ -67,6 +67,7 @@ def create_chat_completion(messages: list[dict], tools: list[dict]) -> dict:
         "tools": tools,
         "tool_choice": "auto",
         "parallel_tool_calls": False,
+        "reasoning_effort": "low",
         "temperature": 0.2,
         "max_completion_tokens": max_tokens,
     }
