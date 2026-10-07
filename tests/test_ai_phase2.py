@@ -1,5 +1,5 @@
 import unittest
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -94,8 +94,8 @@ class SolarQueriesPhase2Tests(unittest.TestCase):
         fetch_month.return_value = ("plant-1", Decimal("248.4"))
         fetch_live.side_effect = RuntimeError("Growatt temporarily unavailable")
 
-        with patch("solar_queries.datetime") as mocked_datetime:
-            mocked_datetime.now.return_value.strftime.return_value = "2026-10"
+        with patch("solar_queries.datetime", wraps=datetime) as mocked_datetime:
+            mocked_datetime.now.return_value = datetime(2026, 10, 7, 18, 0)
             result = get_monthly_generation("2026-10")
 
         self.assertTrue(result["available"])
