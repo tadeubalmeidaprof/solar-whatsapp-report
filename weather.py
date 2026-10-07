@@ -1,7 +1,6 @@
 import os
 import time
 from datetime import date, datetime, timedelta
-from decimal import Decimal
 
 import requests
 
