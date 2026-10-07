@@ -49,6 +49,26 @@ class AIToolsTests(unittest.TestCase):
         self.assertEqual(result["days_with_data"], 7)
         get_recent_generation.assert_called_once_with(days=7)
 
+    @patch("ai.tools.get_weather_window_summary")
+    def test_weather_tool_accepts_custom_time_window(self, weather):
+        weather.return_value = {"available": True}
+
+        result = execute_tool(
+            "consultar_clima",
+            {
+                "report_date": "2026-10-07",
+                "start_hour": 7,
+                "end_hour": 17,
+            },
+        )
+
+        self.assertTrue(result["available"])
+        weather.assert_called_once_with(
+            report_date="2026-10-07",
+            start_hour=7,
+            end_hour=17,
+        )
+
     def test_rejects_unknown_tool(self):
         with self.assertRaises(AIToolError):
             execute_tool("apagar_banco", {})
