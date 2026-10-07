@@ -1,3 +1,4 @@
+import logging
 import os
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -26,6 +27,8 @@ REPORT_TIMEZONE = ZoneInfo("America/Bahia")
 CONNECTION_TYPE = "monofasico"
 MAX_HISTORY_DAYS = 93
 MAINTENANCE_ALERT_TYPES = ("inverter_offline", "possible_soiling")
+
+logger = logging.getLogger(__name__)
 
 
 def _iso_or_text(value):
@@ -366,8 +369,11 @@ def get_monthly_generation(year_month: str) -> dict:
     }
 
 def compare_months(first_year_month: str, second_year_month: str) -> dict:
-    first = get_monthly_generation(first_year_month)
-    second = get_monthly_generation(second_year_month)
+    first_normalized = _parse_year_month(first_year_month)
+    second_normalized = _parse_year_month(second_year_month)
+
+    first = get_monthly_generation(first_normalized)
+    second = get_monthly_generation(second_normalized)
 
     if not first.get("available") or not second.get("available"):
         return {
@@ -377,32 +383,121 @@ def compare_months(first_year_month: str, second_year_month: str) -> dict:
             "reason": "missing_monthly_data",
         }
 
+    now = datetime.now(REPORT_TIMEZONE)
+    current_month = now.strftime("%Y-%m")
+    current_day = now.day
+
     first_value = float(first.get("generation_kwh") or 0)
     second_value = float(second.get("generation_kwh") or 0)
-    difference = second_value - first_value
-    percentage = None
+    raw_difference = second_value - first_value
+    raw_percentage = None
     if first_value > 0:
-        percentage = (difference / first_value) * 100
+        raw_percentage = (raw_difference / first_value) * 100
 
-    return {
+    result = {
         "available": True,
         "first": first,
         "second": second,
-        "difference_kwh": round(difference, 3),
-        "difference_percent_relative_to_first": (
-            round(percentage, 2)
-            if percentage is not None
+        "raw_difference_kwh": round(raw_difference, 3),
+        "raw_difference_percent_relative_to_first": (
+            round(raw_percentage, 2)
+            if raw_percentage is not None
             else None
         ),
-        "higher_month": (
-            second["year_month"]
-            if second_value > first_value
-            else first["year_month"]
-            if first_value > second_value
+        "comparison_mode": "full_months",
+        "months_are_directly_comparable": True,
+    }
+
+    current_in_comparison = (
+        first_normalized == current_month
+        or second_normalized == current_month
+    )
+
+    if not current_in_comparison:
+        result.update(
+            {
+                "difference_kwh": round(raw_difference, 3),
+                "difference_percent_relative_to_first": (
+                    round(raw_percentage, 2)
+                    if raw_percentage is not None
+                    else None
+                ),
+                "higher_month": (
+                    second["year_month"]
+                    if second_value > first_value
+                    else first["year_month"]
+                    if first_value > second_value
+                    else "equal"
+                ),
+            }
+        )
+        return result
+
+    result["comparison_mode"] = "equivalent_partial_period"
+    result["months_are_directly_comparable"] = False
+    result["partial_month"] = current_month
+    result["partial_month_through_day"] = current_day
+    result["warning"] = (
+        "Um dos meses ainda está em andamento. Os totais mensais brutos "
+        "não devem ser comparados diretamente."
+    )
+
+    def equivalent_period(year_month: str) -> dict:
+        parsed = datetime.strptime(year_month, "%Y-%m")
+        start = date(parsed.year, parsed.month, 1)
+        end = date(parsed.year, parsed.month, current_day)
+        return get_generation_period(
+            start_date=start.isoformat(),
+            end_date=end.isoformat(),
+        )
+
+    try:
+        first_period = equivalent_period(first_normalized)
+        second_period = equivalent_period(second_normalized)
+    except (ValueError, RuntimeError):
+        return result
+
+    if (
+        not first_period.get("complete_history")
+        or not second_period.get("complete_history")
+    ):
+        result["fair_comparison_available"] = False
+        result["fair_comparison"] = {
+            "through_day": current_day,
+            "first_period": first_period,
+            "second_period": second_period,
+        }
+        return result
+
+    first_partial = float(first_period.get("total_generation_kwh") or 0)
+    second_partial = float(second_period.get("total_generation_kwh") or 0)
+    fair_difference = second_partial - first_partial
+    fair_percentage = None
+    if first_partial > 0:
+        fair_percentage = (fair_difference / first_partial) * 100
+
+    result["fair_comparison_available"] = True
+    result["fair_comparison"] = {
+        "through_day": current_day,
+        "first_year_month": first_normalized,
+        "second_year_month": second_normalized,
+        "first_generation_kwh": first_partial,
+        "second_generation_kwh": second_partial,
+        "difference_kwh": round(fair_difference, 3),
+        "difference_percent_relative_to_first": (
+            round(fair_percentage, 2)
+            if fair_percentage is not None
+            else None
+        ),
+        "higher_period": (
+            second_normalized
+            if second_partial > first_partial
+            else first_normalized
+            if first_partial > second_partial
             else "equal"
         ),
     }
-
+    return result
 
 def get_savings_summary(year_month: str) -> dict:
     monthly = get_monthly_generation(year_month)
@@ -519,7 +614,12 @@ def get_weather_summary(report_date: str) -> dict:
             longitude=float(longitude_raw.replace(",", ".")),
             report_date=parsed_date,
         )
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "Falha ao consultar Open-Meteo para %s: %s",
+            parsed_date.isoformat(),
+            exc,
+        )
         return {
             "available": False,
             "date": parsed_date.isoformat(),
