@@ -35,6 +35,9 @@ jobs:
       - name: Import smoke test
         run: |
           python - <<'PY'
+          import ai.assistant
+          import ai.provider
+          import ai.tools
           import bot
           import config
           import daily_report_job

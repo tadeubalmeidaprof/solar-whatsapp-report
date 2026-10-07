@@ -5,6 +5,7 @@ from bot import (
     MENU_MESSAGE,
     MONTH_BUTTON_ID,
     TODAY_BUTTON_ID,
+    UNKNOWN_MESSAGE,
     build_reply,
     is_menu_request,
 )
@@ -58,6 +59,33 @@ class BotTests(unittest.TestCase):
             "18,4 kWh hoje",
             build_reply("☀️ Geração de hoje"),
         )
+
+    @patch("bot.ask_solcare_ai")
+    def test_free_text_is_routed_to_ai(self, ask_ai):
+        ask_ai.return_value = "🟢 Sua usina está normal."
+
+        reply = build_reply("Como está minha usina?")
+
+        self.assertEqual(reply, "🟢 Sua usina está normal.")
+        ask_ai.assert_called_once_with("Como está minha usina?")
+
+    @patch("bot.ask_solcare_ai")
+    def test_ai_failure_preserves_legacy_fallback(self, ask_ai):
+        ask_ai.return_value = None
+
+        self.assertEqual(build_reply("mensagem desconhecida"), UNKNOWN_MESSAGE)
+
+    @patch("bot.ask_solcare_ai")
+    @patch("bot.get_generation_summary")
+    def test_known_buttons_do_not_call_ai(self, summary, ask_ai):
+        summary.return_value = {
+            "today_kwh": "18,4",
+            "month_kwh": "312,7",
+        }
+
+        build_reply(TODAY_BUTTON_ID)
+
+        ask_ai.assert_not_called()
 
 
 if __name__ == "__main__":

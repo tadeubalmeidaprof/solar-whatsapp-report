@@ -1,5 +1,6 @@
 import unicodedata
 
+from ai.assistant import ask_solcare_ai
 from solar_queries import get_generation_summary
 
 
@@ -30,6 +31,11 @@ MENU_MESSAGE = f"""{MENU_BODY}
 2 - 📊 Geração do mês
 
 {MENU_FOOTER}"""
+
+UNKNOWN_MESSAGE = (
+    "Não entendi sua mensagem.\n\n"
+    "Digite *menu* para ver as opções disponíveis."
+)
 
 MENU_TRIGGERS = {"oi", "ola", "menu", "ajuda", "inicio"}
 TODAY_ALIASES = {"1", "geracao de hoje", "ver geracao de hoje"}
@@ -73,7 +79,5 @@ def build_reply(message: str) -> str:
             "Digite *menu* para ver as opções novamente."
         )
 
-    return (
-        "Não entendi sua mensagem.\n\n"
-        "Digite *menu* para ver as opções disponíveis."
-    )
+    ai_reply = ask_solcare_ai(message)
+    return ai_reply or UNKNOWN_MESSAGE
