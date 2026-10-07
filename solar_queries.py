@@ -13,7 +13,12 @@ from database import (
     fetch_open_maintenance_alert,
 )
 from fault_monitor import ERROR_GUIDANCE_PT, ERROR_MESSAGES_PT, WARNING_MESSAGES_PT
-from growatt_client import fetch_generation_history, fetch_growatt_payload
+from growatt_client import (
+    fetch_generation_history,
+    fetch_growatt_payload,
+    fetch_plant_peak_power_kwp,
+    fetch_plant_power_curve,
+)
 from savings_calculator import (
     calculate_savings_with_fio_b,
     calculate_savings_without_fio_b,
@@ -672,6 +677,159 @@ def get_weather_window_summary(
             "end_hour": end_hour,
             "reason": "weather_provider_unavailable",
         }
+
+
+def _parse_power_timestamp(value: str) -> datetime:
+    text = str(value or "").strip()
+    if not text:
+        raise ValueError("Timestamp vazio na curva de potência.")
+
+    if text.endswith("Z"):
+        parsed = datetime.fromisoformat(text[:-1] + "+00:00")
+    else:
+        parsed = datetime.fromisoformat(text.replace(" ", "T"))
+
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=REPORT_TIMEZONE)
+
+    return parsed.astimezone(REPORT_TIMEZONE)
+
+
+def get_solar_generation_hours(
+    report_date: str,
+    start_hour: int = 7,
+    end_hour: int = 17,
+) -> dict:
+    parsed_date = _parse_date(report_date, "Data da geração")
+    today = datetime.now(REPORT_TIMEZONE).date()
+
+    if parsed_date > today:
+        raise ValueError("Não é possível consultar geração de um dia futuro.")
+
+    try:
+        start_hour = int(start_hour)
+        end_hour = int(end_hour)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Horários devem ser números inteiros.") from exc
+
+    if not 0 <= start_hour <= 23 or not 1 <= end_hour <= 24:
+        raise ValueError("Horários devem estar entre 0 e 24.")
+
+    if end_hour <= start_hour:
+        raise ValueError("O horário final deve ser posterior ao inicial.")
+
+    station_id = _station_id()
+    rows = fetch_plant_power_curve(
+        report_date=parsed_date,
+        plant_id=station_id,
+    )
+
+    points = []
+    for row in rows:
+        try:
+            timestamp = _parse_power_timestamp(row.get("time"))
+        except (TypeError, ValueError):
+            continue
+
+        if timestamp.date() != parsed_date:
+            continue
+
+        if not start_hour <= timestamp.hour < end_hour:
+            continue
+
+        power_w = _number_or_none(row.get("power_w"))
+        if power_w is None:
+            continue
+
+        points.append(
+            {
+                "timestamp": timestamp,
+                "power_w": max(power_w, 0.0),
+            }
+        )
+
+    points.sort(key=lambda item: item["timestamp"])
+
+    if not points:
+        return {
+            "available": False,
+            "date": parsed_date.isoformat(),
+            "start_hour": start_hour,
+            "end_hour": end_hour,
+            "reason": "growatt_power_curve_unavailable",
+        }
+
+    peak_power_kwp = fetch_plant_peak_power_kwp(plant_id=station_id)
+    meaningful_threshold_w = 50.0
+    if peak_power_kwp and peak_power_kwp > 0:
+        meaningful_threshold_w = max(50.0, peak_power_kwp * 1000 * 0.05)
+
+    active_seconds = 0.0
+    estimated_energy_kwh = 0.0
+    significant_points = []
+    peak_observed_w = 0.0
+
+    for index, point in enumerate(points):
+        power_w = point["power_w"]
+        peak_observed_w = max(peak_observed_w, power_w)
+
+        if index + 1 < len(points):
+            delta_seconds = (
+                points[index + 1]["timestamp"] - point["timestamp"]
+            ).total_seconds()
+            if delta_seconds <= 0 or delta_seconds > 600:
+                delta_seconds = 300.0
+        else:
+            delta_seconds = 300.0
+
+        estimated_energy_kwh += (
+            power_w * (delta_seconds / 3600)
+        ) / 1000
+
+        if power_w >= meaningful_threshold_w:
+            active_seconds += delta_seconds
+            significant_points.append(point)
+
+    equivalent_full_power_hours = None
+    if peak_power_kwp and peak_power_kwp > 0:
+        equivalent_full_power_hours = estimated_energy_kwh / peak_power_kwp
+
+    generation_start = None
+    generation_end = None
+    if significant_points:
+        generation_start = significant_points[0]["timestamp"].strftime("%H:%M")
+        generation_end = significant_points[-1]["timestamp"].strftime("%H:%M")
+
+    return {
+        "available": True,
+        "date": parsed_date.isoformat(),
+        "window_label": f"{start_hour:02d}:00-{end_hour:02d}:00",
+        "source": "growatt_power_curve",
+        "samples": len(points),
+        "plant_peak_power_kwp": (
+            round(peak_power_kwp, 3)
+            if peak_power_kwp is not None
+            else None
+        ),
+        "meaningful_generation_threshold_w": round(meaningful_threshold_w, 1),
+        "active_generation_hours": round(active_seconds / 3600, 2),
+        "equivalent_full_power_hours": (
+            round(equivalent_full_power_hours, 2)
+            if equivalent_full_power_hours is not None
+            else None
+        ),
+        "estimated_energy_in_window_kwh": round(estimated_energy_kwh, 2),
+        "peak_observed_kw": round(peak_observed_w / 1000, 3),
+        "generation_start": generation_start,
+        "generation_end": generation_end,
+        "metric_explanation": (
+            "active_generation_hours mede por quanto tempo a usina ficou acima "
+            "de 5% da potência pico (mínimo 50 W). "
+            "equivalent_full_power_hours representa a energia da janela dividida "
+            "pela potência pico instalada. Não é duração meteorológica de insolação."
+        ),
+    }
+
 
 def get_fault_code_info(code: str) -> dict:
     normalized = str(code or "").strip()
