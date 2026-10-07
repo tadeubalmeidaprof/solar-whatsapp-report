@@ -4,6 +4,8 @@ from unittest.mock import Mock, patch
 
 from growatt_client import (
     _extract_generation_history_rows,
+    _extract_plant_peak_power_kwp,
+    _extract_power_curve_rows,
     fetch_generation_history,
 )
 
@@ -81,6 +83,42 @@ class GrowattGenerationHistoryTests(unittest.TestCase):
         self.assertEqual(first_args[2], date(2026, 10, 7))
         self.assertEqual(second_args[1], date(2026, 10, 8))
         self.assertEqual(second_args[2], date(2026, 10, 8))
+
+    def test_extracts_power_curve_rows(self):
+        payload = {
+            "data": {
+                "count": 2,
+                "powers": [
+                    {"time": "2026-10-07T10:00:00Z", "power": 3200},
+                    {"time": "2026-10-07T10:05:00Z", "power": "3500"},
+                ],
+            }
+        }
+
+        self.assertEqual(
+            _extract_power_curve_rows(payload),
+            [
+                {"time": "2026-10-07T10:00:00Z", "power_w": 3200.0},
+                {"time": "2026-10-07T10:05:00Z", "power_w": 3500.0},
+            ],
+        )
+
+    def test_extracts_peak_power_from_openapi_plant_list(self):
+        payload = {
+            "data": {
+                "plants": [
+                    {
+                        "plant_id": "plant-1",
+                        "peak_power": 8.8,
+                    }
+                ]
+            }
+        }
+
+        self.assertEqual(
+            _extract_plant_peak_power_kwp(payload, plant_id="plant-1"),
+            8.8,
+        )
 
 
 if __name__ == "__main__":
