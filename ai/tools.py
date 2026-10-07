@@ -217,7 +217,7 @@ def execute_tool(name: str, arguments: dict) -> dict:
     if spec is None:
         raise AIToolError("Ferramenta não reconhecida.")
 
-    handler, required, allowed = spec
+    handler_name, required, allowed = spec
     received = set(arguments)
 
     unexpected = received - allowed
@@ -227,6 +227,8 @@ def execute_tool(name: str, arguments: dict) -> dict:
     missing = required - received
     if missing:
         raise AIToolError("A ferramenta não recebeu todos os argumentos obrigatórios.")
+
+    handler = globals()[handler_name]
 
     try:
         return handler(**arguments)
