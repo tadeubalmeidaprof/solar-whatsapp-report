@@ -10,6 +10,7 @@ from solar_queries import (
     get_monthly_generation,
     get_recent_generation,
     get_savings_summary,
+    get_solar_generation_hours,
     get_weather_summary,
     get_weather_window_summary,
 )
@@ -289,6 +290,35 @@ class SolarQueriesPhase2Tests(unittest.TestCase):
             start_hour=7,
             end_hour=17,
         )
+
+    @patch("solar_queries.fetch_plant_peak_power_kwp", return_value=8.0)
+    @patch("solar_queries.fetch_plant_power_curve")
+    @patch("solar_queries._station_id", return_value="plant-1")
+    def test_solar_generation_hours_uses_real_growatt_curve(
+        self,
+        station_id,
+        power_curve,
+        peak_power,
+    ):
+        power_curve.return_value = [
+            {"time": "2026-10-07T10:00:00-03:00", "power_w": 1000},
+            {"time": "2026-10-07T10:05:00-03:00", "power_w": 4000},
+            {"time": "2026-10-07T10:10:00-03:00", "power_w": 8000},
+        ]
+
+        result = get_solar_generation_hours(
+            report_date="2026-10-07",
+            start_hour=7,
+            end_hour=17,
+        )
+
+        self.assertTrue(result["available"])
+        self.assertEqual(result["source"], "growatt_power_curve")
+        self.assertEqual(result["plant_peak_power_kwp"], 8.0)
+        self.assertEqual(result["samples"], 3)
+        self.assertGreater(result["active_generation_hours"], 0)
+        self.assertGreater(result["equivalent_full_power_hours"], 0)
+        self.assertEqual(result["generation_start"], "10:00")
 
 
 if __name__ == "__main__":

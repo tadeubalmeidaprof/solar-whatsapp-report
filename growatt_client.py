@@ -486,6 +486,137 @@ def fetch_generation_history(
     return [merged[key] for key in sorted(merged)]
 
 
+
+def _extract_plant_peak_power_kwp(payload: dict, plant_id: str | None = None) -> float | None:
+    plants = as_list(payload)
+
+    if plant_id:
+        filtered = []
+        for plant in plants:
+            candidate_id = (
+                plant.get("plant_id")
+                or plant.get("plantId")
+                or plant.get("id")
+                or deep_find(plant, ["plant_id", "plantId", "id"])
+            )
+            if str(candidate_id or "") == str(plant_id):
+                filtered.append(plant)
+        if filtered:
+            plants = filtered
+
+    if not plants:
+        return None
+
+    plant = plants[0]
+
+    peak_power = (
+        plant.get("peak_power")
+        or plant.get("peakPower")
+        or deep_find(plant, ["peak_power", "peakPower"])
+    )
+    value = parse_number(peak_power)
+    if value is not None and value > 0:
+        return round(float(value), 3)
+
+    nominal_power = (
+        plant.get("nominalPower")
+        or plant.get("nominal_power")
+        or deep_find(plant, ["nominalPower", "nominal_power"])
+    )
+    value = parse_number(nominal_power)
+    if value is None or value <= 0:
+        return None
+
+    if value > 1000:
+        value = value / 1000
+
+    return round(float(value), 3)
+
+
+def fetch_plant_peak_power_kwp(plant_id: str | None = None) -> float | None:
+    token = env("GROWATT_API_TOKEN", required=True)
+    server_url = env("GROWATT_SERVER_URL", "https://openapi.growatt.com/v1/")
+    api = growattServer.OpenApiV1(token=token)
+
+    if hasattr(api, "server_url"):
+        api.server_url = server_url
+
+    station_id = str(plant_id or get_first_plant_id(api))
+    response = call_first(
+        api,
+        [
+            ("plant_list", tuple()),
+            ("plant_list_v1", tuple()),
+        ],
+    )
+
+    return _extract_plant_peak_power_kwp(response, plant_id=station_id)
+
+
+def _extract_power_curve_rows(payload: dict) -> list[dict]:
+    data = unwrap(payload)
+    if not isinstance(data, dict):
+        return []
+
+    raw_rows = (
+        data.get("powers")
+        or data.get("power")
+        or data.get("records")
+        or data.get("datas")
+        or []
+    )
+
+    if not isinstance(raw_rows, list):
+        return []
+
+    rows = []
+    for item in raw_rows:
+        if not isinstance(item, dict):
+            continue
+
+        raw_time = item.get("time") or item.get("date")
+        raw_power = item.get("power")
+
+        if raw_time in (None, "") or raw_power in (None, ""):
+            continue
+
+        power_w = parse_number(raw_power)
+        if power_w is None:
+            continue
+
+        rows.append(
+            {
+                "time": str(raw_time).strip(),
+                "power_w": max(float(power_w), 0.0),
+            }
+        )
+
+    return rows
+
+
+def fetch_plant_power_curve(
+    report_date: date,
+    plant_id: str | None = None,
+) -> list[dict]:
+    token = env("GROWATT_API_TOKEN", required=True)
+    server_url = env("GROWATT_SERVER_URL", "https://openapi.growatt.com/v1/")
+    api = growattServer.OpenApiV1(token=token)
+
+    if hasattr(api, "server_url"):
+        api.server_url = server_url
+
+    station_id = str(plant_id or get_first_plant_id(api))
+    response = call_first(
+        api,
+        [
+            ("plant_power_overview", (station_id, report_date)),
+            ("plant_power", (station_id, report_date)),
+        ],
+    )
+
+    return _extract_power_curve_rows(response)
+
+
 def _web_server() -> str:
     return env("GROWATT_WEB_SERVER").rstrip("/") or DEFAULT_WEB_SERVER
 

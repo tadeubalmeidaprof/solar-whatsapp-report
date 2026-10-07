@@ -8,6 +8,7 @@ from solar_queries import (
     get_maintenance_status,
     get_plant_status,
     get_savings_summary,
+    get_solar_generation_hours,
     get_weather_summary,
     get_weather_window_summary,
 )
@@ -185,6 +186,41 @@ TOOL_DEFINITIONS = [
     {
         "type": "function",
         "function": {
+            "name": "consultar_horas_solares_usina",
+            "description": (
+                "Calcula horas de geração solar efetiva usando a curva real de "
+                "potência da Growatt. Use quando o usuário perguntar quantas horas "
+                "de sol efetivo, horas de geração, janela produtiva ou horas "
+                "equivalentes de potência da usina. Padrão: 07:00-17:00."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "report_date": {
+                        "type": "string",
+                        "description": "Data no formato YYYY-MM-DD.",
+                    },
+                    "start_hour": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 23,
+                        "description": "Hora inicial. Padrão: 7.",
+                    },
+                    "end_hour": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 24,
+                        "description": "Hora final exclusiva. Padrão: 17.",
+                    },
+                },
+                "required": ["report_date"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "explicar_codigo_falha",
             "description": (
                 "Explica um código de erro ou aviso Growatt conhecido e, quando "
@@ -244,6 +280,11 @@ _TOOL_HANDLERS = {
     ),
     "consultar_clima": (
         "get_weather_window_summary",
+        {"report_date"},
+        {"report_date", "start_hour", "end_hour"},
+    ),
+    "consultar_horas_solares_usina": (
+        "get_solar_generation_hours",
         {"report_date"},
         {"report_date", "start_hour", "end_hour"},
     ),
