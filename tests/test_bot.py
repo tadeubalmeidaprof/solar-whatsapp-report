@@ -64,10 +64,10 @@ class BotTests(unittest.TestCase):
     def test_free_text_is_routed_to_ai(self, ask_ai):
         ask_ai.return_value = "🟢 Sua usina está normal."
 
-        reply = build_reply("Como está minha usina?")
+        reply = build_reply("Como está minha usina?", chat_id="5511@c.us")
 
         self.assertEqual(reply, "🟢 Sua usina está normal.")
-        ask_ai.assert_called_once_with("Como está minha usina?")
+        ask_ai.assert_called_once_with("Como está minha usina?", chat_id="5511@c.us")
 
     @patch("bot.ask_solcare_ai")
     def test_ai_failure_preserves_legacy_fallback(self, ask_ai):

@@ -39,3 +39,11 @@ services:
         value: "12"
       - key: GROQ_MAX_COMPLETION_TOKENS
         value: "600"
+      - key: ENERGY_TARIFF
+        sync: false
+      - key: AVERAGE_CONSUMPTION_KWH
+        sync: false
+      - key: TUSD_FIO_B_KWH
+        sync: false
+      - key: FIO_B_PERCENTAGE
+        sync: false

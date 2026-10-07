@@ -118,5 +118,35 @@ class AIAssistantTests(unittest.TestCase):
             self.assertIsNone(ask_solcare_ai("Como está minha usina?"))
 
 
+    @patch("ai.assistant.save_conversation_exchange")
+    @patch("ai.assistant.load_recent_messages")
+    @patch("ai.assistant.create_chat_completion")
+    def test_chat_context_is_loaded_and_saved(
+        self,
+        completion,
+        load_history,
+        save_exchange,
+    ):
+        load_history.return_value = [
+            {"role": "user", "content": "Quanto gerei hoje?"},
+            {"role": "assistant", "content": "20 kWh."},
+        ]
+        completion.return_value = {
+            "role": "assistant",
+            "content": "Ontem foram 18 kWh.",
+        }
+
+        with patch.dict("os.environ", AI_ENV, clear=True):
+            reply = ask_solcare_ai("E ontem?", chat_id="5511@c.us")
+
+        self.assertEqual(reply, "Ontem foram 18 kWh.")
+        load_history.assert_called_once_with("5511@c.us")
+        save_exchange.assert_called_once_with(
+            chat_id="5511@c.us",
+            user_message="E ontem?",
+            assistant_message="Ontem foram 18 kWh.",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

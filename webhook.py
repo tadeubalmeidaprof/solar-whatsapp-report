@@ -263,7 +263,7 @@ def process_message(chat_id: str, body: str) -> None:
             _send_menu(target_chat_id)
             return
 
-        _send_text(target_chat_id, build_reply(body))
+        _send_text(target_chat_id, build_reply(body, chat_id=chat_id))
         logger.info("Resposta do bot enviada pela GREEN-API.")
     except Exception:
         logger.exception("Falha ao processar mensagem recebida da GREEN-API.")
