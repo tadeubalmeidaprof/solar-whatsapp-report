@@ -69,6 +69,29 @@ class AIToolsTests(unittest.TestCase):
             end_hour=17,
         )
 
+    @patch("ai.tools.get_solar_generation_hours")
+    def test_solar_hours_tool_uses_requested_window(self, solar_hours):
+        solar_hours.return_value = {
+            "available": True,
+            "active_generation_hours": 8.0,
+        }
+
+        result = execute_tool(
+            "consultar_horas_solares_usina",
+            {
+                "report_date": "2026-10-07",
+                "start_hour": 7,
+                "end_hour": 17,
+            },
+        )
+
+        self.assertTrue(result["available"])
+        solar_hours.assert_called_once_with(
+            report_date="2026-10-07",
+            start_hour=7,
+            end_hour=17,
+        )
+
     def test_rejects_unknown_tool(self):
         with self.assertRaises(AIToolError):
             execute_tool("apagar_banco", {})
