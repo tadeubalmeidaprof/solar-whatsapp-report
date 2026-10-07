@@ -177,35 +177,35 @@ class AIToolError(RuntimeError):
 
 
 _TOOL_HANDLERS = {
-    "consultar_resumo_usina": (get_plant_status, set(), set()),
-    "consultar_falhas_ativas": (get_active_faults_summary, set(), set()),
-    "consultar_manutencao": (get_maintenance_status, set(), set()),
+    "consultar_resumo_usina": ("get_plant_status", set(), set()),
+    "consultar_falhas_ativas": ("get_active_faults_summary", set(), set()),
+    "consultar_manutencao": ("get_maintenance_status", set(), set()),
     "consultar_geracao_periodo": (
-        get_generation_period,
+        "get_generation_period",
         {"start_date", "end_date"},
         {"start_date", "end_date"},
     ),
     "comparar_meses": (
-        compare_months,
+        "compare_months",
         {"first_year_month", "second_year_month"},
         {"first_year_month", "second_year_month"},
     ),
     "consultar_economia_mes": (
-        get_savings_summary,
+        "get_savings_summary",
         {"year_month"},
         {"year_month"},
     ),
     "consultar_clima": (
-        get_weather_summary,
+        "get_weather_summary",
         {"report_date"},
         {"report_date"},
     ),
     "explicar_codigo_falha": (
-        get_fault_code_info,
+        "get_fault_code_info",
         {"code"},
         {"code"},
     ),
-    "analisar_usina": (get_comprehensive_analysis, set(), set()),
+    "analisar_usina": ("get_comprehensive_analysis", set(), set()),
 }
 
 
