@@ -103,8 +103,10 @@ TOOL_DEFINITIONS = [
         "function": {
             "name": "comparar_meses",
             "description": (
-                "Compara a geração de dois meses e calcula a diferença absoluta "
-                "e percentual. Use datas no formato YYYY-MM."
+                "Compara a geração de dois meses. Quando um deles é o mês atual, "
+                "retorna também uma comparação justa do mesmo número de dias "
+                "e sinaliza que os totais mensais brutos não são equivalentes. "
+                "Use datas no formato YYYY-MM."
             ),
             "parameters": {
                 "type": "object",

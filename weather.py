@@ -44,11 +44,11 @@ def get_daily_weather(
                 "temperature_2m_max",
                 "temperature_2m_min",
                 "precipitation_sum",
-                "cloud_cover_mean",
                 "shortwave_radiation_sum",
                 "sunshine_duration",
             ]
         ),
+        "hourly": "cloud_cover",
         "timezone": "America/Bahia",
         "start_date": report_date.isoformat(),
         "end_date": report_date.isoformat(),
@@ -67,7 +67,17 @@ def get_daily_weather(
     if not daily.get("time"):
         raise RuntimeError("Open-Meteo não retornou dados para a data solicitada.")
 
-    cloud_cover = float((daily.get("cloud_cover_mean") or [0])[0] or 0)
+    hourly = payload.get("hourly") or {}
+    cloud_values = [
+        float(value)
+        for value in (hourly.get("cloud_cover") or [])
+        if value is not None
+    ]
+    cloud_cover = (
+        sum(cloud_values) / len(cloud_values)
+        if cloud_values
+        else 0.0
+    )
     rainfall = float((daily.get("precipitation_sum") or [0])[0] or 0)
 
     radiation_mj_m2 = Decimal(

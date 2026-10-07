@@ -122,6 +122,60 @@ class SolarQueriesPhase2Tests(unittest.TestCase):
         self.assertEqual(result["difference_kwh"], 25.0)
         self.assertEqual(result["difference_percent_relative_to_first"], 25.0)
 
+    @patch("solar_queries.get_generation_period")
+    @patch("solar_queries.get_monthly_generation")
+    def test_compare_current_month_uses_equivalent_days(
+        self,
+        monthly,
+        period,
+    ):
+        monthly.side_effect = [
+            {
+                "available": True,
+                "year_month": "2026-09",
+                "generation_kwh": 1215.7,
+            },
+            {
+                "available": True,
+                "year_month": "2026-10",
+                "generation_kwh": 294.1,
+            },
+        ]
+        period.side_effect = [
+            {
+                "complete_history": True,
+                "total_generation_kwh": 275.0,
+            },
+            {
+                "complete_history": True,
+                "total_generation_kwh": 294.1,
+            },
+        ]
+
+        with patch("solar_queries.datetime", wraps=datetime) as mocked_datetime:
+            mocked_datetime.now.return_value = datetime(2026, 10, 7, 19, 0)
+            result = compare_months("2026-09", "2026-10")
+
+        self.assertFalse(result["months_are_directly_comparable"])
+        self.assertEqual(
+            result["comparison_mode"],
+            "equivalent_partial_period",
+        )
+        self.assertTrue(result["fair_comparison_available"])
+        self.assertEqual(result["fair_comparison"]["through_day"], 7)
+        self.assertEqual(
+            result["fair_comparison"]["difference_kwh"],
+            19.1,
+        )
+        period.assert_any_call(
+            start_date="2026-09-01",
+            end_date="2026-09-07",
+        )
+        period.assert_any_call(
+            start_date="2026-10-01",
+            end_date="2026-10-07",
+        )
+
     @patch("solar_queries.calculate_savings_without_fio_b")
     @patch("solar_queries.get_monthly_generation")
     def test_savings_uses_safe_simplified_mode_when_fio_b_missing(
