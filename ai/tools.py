@@ -4,6 +4,7 @@ from solar_queries import (
     get_comprehensive_analysis,
     get_fault_code_info,
     get_generation_period,
+    get_recent_generation,
     get_maintenance_status,
     get_plant_status,
     get_savings_summary,
@@ -69,6 +70,30 @@ TOOL_DEFINITIONS = [
                     },
                 },
                 "required": ["start_date", "end_date"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "consultar_ultimos_dias",
+            "description": (
+                "Consulta a geração dos últimos N dias incluindo hoje. "
+                "Use esta ferramenta para frases como 'últimos 7 dias' e "
+                "'últimos 30 dias', sem calcular as datas manualmente."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "days": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 31,
+                        "description": "Quantidade de dias, incluindo hoje.",
+                    },
+                },
+                "required": ["days"],
                 "additionalProperties": False,
             },
         },
@@ -184,6 +209,11 @@ _TOOL_HANDLERS = {
         "get_generation_period",
         {"start_date", "end_date"},
         {"start_date", "end_date"},
+    ),
+    "consultar_ultimos_dias": (
+        "get_recent_generation",
+        {"days"},
+        {"days"},
     ),
     "comparar_meses": (
         "compare_months",

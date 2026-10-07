@@ -135,6 +135,7 @@ def ask_solcare_ai(message: str, chat_id: str = "") -> str | None:
 
                 try:
                     arguments = _parse_arguments(function.get("arguments"))
+                    logger.info("Executando tool de IA: %s", tool_name)
                     result = _safe_tool_result(tool_name, arguments)
                 except AIToolError:
                     result = {

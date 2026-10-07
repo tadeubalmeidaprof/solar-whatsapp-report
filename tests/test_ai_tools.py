@@ -37,6 +37,18 @@ class AIToolsTests(unittest.TestCase):
             end_date="2026-10-02",
         )
 
+    @patch("ai.tools.get_recent_generation")
+    def test_executes_recent_days_tool(self, get_recent_generation):
+        get_recent_generation.return_value = {"days_with_data": 7}
+
+        result = execute_tool(
+            "consultar_ultimos_dias",
+            {"days": 7},
+        )
+
+        self.assertEqual(result["days_with_data"], 7)
+        get_recent_generation.assert_called_once_with(days=7)
+
     def test_rejects_unknown_tool(self):
         with self.assertRaises(AIToolError):
             execute_tool("apagar_banco", {})

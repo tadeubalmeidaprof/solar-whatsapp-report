@@ -7,16 +7,25 @@ from solar_queries import (
     compare_months,
     get_fault_code_info,
     get_generation_period,
+    get_monthly_generation,
+    get_recent_generation,
     get_savings_summary,
     get_weather_summary,
 )
 
 
 class SolarQueriesPhase2Tests(unittest.TestCase):
+    @patch("solar_queries.fetch_generation_history")
     @patch("solar_queries.fetch_growatt_payload")
     @patch("solar_queries.fetch_daily_generation_range")
-    def test_generation_period_merges_live_today(self, fetch_range, fetch_live):
+    def test_generation_period_merges_live_today(
+        self,
+        fetch_range,
+        fetch_live,
+        fetch_history,
+    ):
         fetch_range.return_value = []
+        fetch_history.return_value = []
         fetch_live.return_value = {
             "plantId": "plant-1",
             "energyTodayKwh": 12.5,
@@ -31,6 +40,67 @@ class SolarQueriesPhase2Tests(unittest.TestCase):
 
         self.assertTrue(result["complete_history"])
         self.assertEqual(result["total_generation_kwh"], 12.5)
+        self.assertEqual(result["daily"][0]["source"], "growatt_live")
+
+    @patch("solar_queries.fetch_growatt_payload")
+    @patch("solar_queries.fetch_generation_history")
+    @patch("solar_queries.fetch_daily_generation_range")
+    def test_generation_period_uses_growatt_history_when_database_is_missing(
+        self,
+        fetch_range,
+        fetch_history,
+        fetch_live,
+    ):
+        fetch_range.return_value = []
+        fetch_history.return_value = [
+            {"date": "2026-10-05", "energy_kwh": 10.0},
+            {"date": "2026-10-06", "energy_kwh": 11.0},
+        ]
+        fetch_live.side_effect = RuntimeError("live unavailable")
+
+        with patch("solar_queries._station_id", return_value="plant-1"), patch(
+            "solar_queries.datetime"
+        ) as mocked_datetime:
+            mocked_datetime.now.return_value.date.return_value = date(2026, 10, 7)
+            result = get_generation_period("2026-10-05", "2026-10-06")
+
+        self.assertTrue(result["complete_history"])
+        self.assertEqual(result["total_generation_kwh"], 21.0)
+        self.assertTrue(all(x["source"] == "growatt_history" for x in result["daily"]))
+
+    @patch("solar_queries.get_generation_period")
+    def test_recent_generation_calculates_range_in_backend(self, period):
+        period.return_value = {"complete_history": True}
+
+        with patch("solar_queries.datetime") as mocked_datetime:
+            mocked_datetime.now.return_value.date.return_value = date(2026, 10, 7)
+            result = get_recent_generation(7)
+
+        self.assertEqual(result, {"complete_history": True})
+        period.assert_called_once_with(
+            start_date="2026-10-01",
+            end_date="2026-10-07",
+        )
+
+    @patch("solar_queries.fetch_growatt_payload")
+    @patch("solar_queries.fetch_generation_for_month")
+    @patch("solar_queries._station_id", return_value="plant-1")
+    def test_current_month_falls_back_to_snapshot_when_live_growatt_fails(
+        self,
+        station_id,
+        fetch_month,
+        fetch_live,
+    ):
+        fetch_month.return_value = ("plant-1", Decimal("248.4"))
+        fetch_live.side_effect = RuntimeError("Growatt temporarily unavailable")
+
+        with patch("solar_queries.datetime") as mocked_datetime:
+            mocked_datetime.now.return_value.strftime.return_value = "2026-10"
+            result = get_monthly_generation("2026-10")
+
+        self.assertTrue(result["available"])
+        self.assertEqual(result["generation_kwh"], 248.4)
+        self.assertEqual(result["source"], "monthly_snapshot_fallback")
 
     @patch("solar_queries.get_monthly_generation")
     def test_compare_months_calculates_percentage(self, monthly):
@@ -106,6 +176,38 @@ class SolarQueriesPhase2Tests(unittest.TestCase):
         self.assertTrue(result["available"])
         self.assertEqual(result["source"], "monitoring_history")
         self.assertEqual(result["weather_class"], "favorable")
+
+    @patch("solar_queries.get_daily_weather")
+    @patch("solar_queries.fetch_daily_weather_for_date", return_value=None)
+    @patch("solar_queries._station_id", return_value="plant-1")
+    def test_weather_fetches_open_meteo_when_history_is_missing(
+        self,
+        station_id,
+        fetch_weather,
+        get_weather,
+    ):
+        get_weather.return_value = {
+            "PERCENTUALNUVENS": 30,
+            "CHUVAMM": 0,
+            "RADIACAOSOLARWHM2": 4000,
+            "HORASSOL": 8,
+            "TEMPERATURAMINIMAC": 20,
+            "TEMPERATURAMAXIMAC": 31,
+            "CLASSIFICACAOCLIMA": "favorable",
+        }
+
+        with patch.dict(
+            "os.environ",
+            {
+                "STATION_LATITUDE": "-14.2",
+                "STATION_LONGITUDE": "-42.2",
+            },
+            clear=True,
+        ):
+            result = get_weather_summary("2026-10-06")
+
+        self.assertTrue(result["available"])
+        self.assertEqual(result["source"], "open_meteo")
 
 
 if __name__ == "__main__":
