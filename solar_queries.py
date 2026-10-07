@@ -1,5 +1,5 @@
 import os
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
@@ -12,7 +12,7 @@ from database import (
     fetch_open_maintenance_alert,
 )
 from fault_monitor import ERROR_GUIDANCE_PT, ERROR_MESSAGES_PT, WARNING_MESSAGES_PT
-from growatt_client import fetch_growatt_payload
+from growatt_client import fetch_generation_history, fetch_growatt_payload
 from savings_calculator import (
     calculate_savings_with_fio_b,
     calculate_savings_without_fio_b,
@@ -213,17 +213,53 @@ def get_generation_period(start_date: str, end_date: str) -> dict:
             "date": row_date,
             "generation_kwh": _number_or_none(row.get("generation_day_kwh")),
             "inverter_status": str(row.get("inverter_status") or ""),
+            "source": "monitoring_history",
         }
+
+    expected_dates = {
+        (start + timedelta(days=offset)).isoformat()
+        for offset in range(expected_days)
+    }
+
+    if not expected_dates.issubset(by_date):
+        try:
+            history = fetch_generation_history(
+                start_date=start,
+                end_date=end,
+                plant_id=station_id,
+            )
+            for row in history:
+                row_date = str(row.get("date") or "")
+                if row_date not in expected_dates:
+                    continue
+                by_date[row_date] = {
+                    "date": row_date,
+                    "generation_kwh": _number_or_none(row.get("energy_kwh")),
+                    "inverter_status": "",
+                    "source": "growatt_history",
+                }
+        except Exception:
+            # O banco continua sendo uma fonte válida mesmo se a OpenAPI
+            # histórica estiver temporariamente indisponível.
+            pass
 
     if start <= today <= end:
-        live = fetch_growatt_payload()
-        by_date[today.isoformat()] = {
-            "date": today.isoformat(),
-            "generation_kwh": _number_or_none(live.get("energyTodayKwh")),
-            "inverter_status": str(live.get("status") or ""),
-        }
+        try:
+            live = fetch_growatt_payload()
+            by_date[today.isoformat()] = {
+                "date": today.isoformat(),
+                "generation_kwh": _number_or_none(live.get("energyTodayKwh")),
+                "inverter_status": str(live.get("status") or ""),
+                "source": "growatt_live",
+            }
+        except Exception:
+            pass
 
-    ordered = [by_date[key] for key in sorted(by_date)]
+    ordered = [
+        by_date[key]
+        for key in sorted(by_date)
+        if key in expected_dates
+    ]
     total = sum(
         item["generation_kwh"] or 0
         for item in ordered
@@ -247,38 +283,87 @@ def get_generation_period(start_date: str, end_date: str) -> dict:
     }
 
 
+def get_recent_generation(days: int) -> dict:
+    try:
+        days = int(days)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Quantidade de dias inválida.") from exc
+
+    if days < 1 or days > 31:
+        raise ValueError("A consulta de últimos dias aceita valores entre 1 e 31.")
+
+    today = datetime.now(REPORT_TIMEZONE).date()
+    start = today - timedelta(days=days - 1)
+    return get_generation_period(
+        start_date=start.isoformat(),
+        end_date=today.isoformat(),
+    )
+
+
 def get_monthly_generation(year_month: str) -> dict:
     normalized = _parse_year_month(year_month)
     current_month = datetime.now(REPORT_TIMEZONE).strftime("%Y-%m")
+    station_id = _station_id()
 
-    if normalized == current_month:
-        payload = fetch_growatt_payload()
+    snapshot = fetch_generation_for_month(
+        year_month=normalized,
+        station_id=station_id,
+    )
+    snapshot_value = float(snapshot[1]) if snapshot else None
+
+    if normalized != current_month:
+        if snapshot_value is None:
+            return {
+                "available": False,
+                "year_month": normalized,
+                "reason": "no_monthly_snapshot",
+            }
+
         return {
             "available": True,
             "year_month": normalized,
-            "generation_kwh": _number_or_none(payload.get("energyMonthKwh")),
+            "generation_kwh": snapshot_value,
+            "source": "monthly_snapshot",
+        }
+
+    live_value = None
+    try:
+        payload = fetch_growatt_payload()
+        live_value = _number_or_none(payload.get("energyMonthKwh"))
+    except Exception:
+        pass
+
+    if live_value is not None and (
+        snapshot_value is None or live_value >= snapshot_value
+    ):
+        return {
+            "available": True,
+            "year_month": normalized,
+            "generation_kwh": live_value,
             "source": "growatt_live",
         }
 
-    result = fetch_generation_for_month(
-        year_month=normalized,
-        station_id=_station_id(),
-    )
-    if not result:
+    if snapshot_value is not None:
         return {
-            "available": False,
+            "available": True,
             "year_month": normalized,
-            "reason": "no_monthly_snapshot",
+            "generation_kwh": snapshot_value,
+            "source": "monthly_snapshot_fallback",
         }
 
-    _, generation = result
-    return {
-        "available": True,
-        "year_month": normalized,
-        "generation_kwh": float(generation),
-        "source": "monthly_snapshot",
-    }
+    if live_value is not None:
+        return {
+            "available": True,
+            "year_month": normalized,
+            "generation_kwh": live_value,
+            "source": "growatt_live",
+        }
 
+    return {
+        "available": False,
+        "year_month": normalized,
+        "reason": "current_month_unavailable",
+    }
 
 def compare_months(first_year_month: str, second_year_month: str) -> dict:
     first = get_monthly_generation(first_year_month)
@@ -419,13 +504,6 @@ def get_weather_summary(report_date: str) -> dict:
     if stored:
         return _sanitize_weather(stored, parsed_date, "monitoring_history")
 
-    if parsed_date != today:
-        return {
-            "available": False,
-            "date": parsed_date.isoformat(),
-            "reason": "weather_history_unavailable",
-        }
-
     latitude_raw = env("STATION_LATITUDE")
     longitude_raw = env("STATION_LONGITUDE")
     if not latitude_raw or not longitude_raw:
@@ -435,13 +513,20 @@ def get_weather_summary(report_date: str) -> dict:
             "reason": "station_location_not_configured",
         }
 
-    weather = get_daily_weather(
-        latitude=float(latitude_raw.replace(",", ".")),
-        longitude=float(longitude_raw.replace(",", ".")),
-        report_date=parsed_date,
-    )
-    return _sanitize_weather(weather, parsed_date, "open_meteo_live")
+    try:
+        weather = get_daily_weather(
+            latitude=float(latitude_raw.replace(",", ".")),
+            longitude=float(longitude_raw.replace(",", ".")),
+            report_date=parsed_date,
+        )
+    except Exception:
+        return {
+            "available": False,
+            "date": parsed_date.isoformat(),
+            "reason": "open_meteo_unavailable",
+        }
 
+    return _sanitize_weather(weather, parsed_date, "open_meteo")
 
 def get_fault_code_info(code: str) -> dict:
     normalized = str(code or "").strip()

@@ -27,6 +27,10 @@ services:
         sync: false
       - key: GROWATT_DEVICE_SN
         sync: false
+      - key: STATION_LATITUDE
+        sync: false
+      - key: STATION_LONGITUDE
+        sync: false
       - key: AI_ENABLED
         value: "true"
       - key: AI_PROVIDER

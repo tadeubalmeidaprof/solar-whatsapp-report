@@ -1,11 +1,13 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 import requests
 
 
-OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
+OPEN_METEO_FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
+OPEN_METEO_ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 REQUEST_TIMEOUT = 30
+RECENT_HISTORY_DAYS = 5
 
 
 def classify_weather(
@@ -20,6 +22,13 @@ def classify_weather(
         return "favorable"
 
     return "partially_favorable"
+
+
+def _open_meteo_url(report_date: date) -> str:
+    if report_date >= date.today() - timedelta(days=RECENT_HISTORY_DAYS):
+        return OPEN_METEO_FORECAST_URL
+
+    return OPEN_METEO_ARCHIVE_URL
 
 
 def get_daily_weather(
@@ -45,7 +54,11 @@ def get_daily_weather(
         "end_date": report_date.isoformat(),
     }
 
-    response = requests.get(OPEN_METEO_URL, params=params, timeout=REQUEST_TIMEOUT)
+    response = requests.get(
+        _open_meteo_url(report_date),
+        params=params,
+        timeout=REQUEST_TIMEOUT,
+    )
     response.raise_for_status()
     payload = response.json()
 
@@ -57,9 +70,9 @@ def get_daily_weather(
     cloud_cover = float((daily.get("cloud_cover_mean") or [0])[0] or 0)
     rainfall = float((daily.get("precipitation_sum") or [0])[0] or 0)
 
-    # A API diária retorna shortwave_radiation_sum em MJ/m².
-    # Conversão: 1 MJ/m² = 277,7778 Wh/m².
-    radiation_mj_m2 = Decimal(str((daily.get("shortwave_radiation_sum") or [0])[0] or 0))
+    radiation_mj_m2 = Decimal(
+        str((daily.get("shortwave_radiation_sum") or [0])[0] or 0)
+    )
     radiation_wh_m2 = float(radiation_mj_m2 * Decimal("277.7777778"))
 
     sunshine_seconds = float((daily.get("sunshine_duration") or [0])[0] or 0)
@@ -76,8 +89,12 @@ def get_daily_weather(
         "CHUVAMM": round(rainfall, 2),
         "RADIACAOSOLARWHM2": round(radiation_wh_m2, 2),
         "HORASSOL": round(sunshine_hours, 2),
-        "TEMPERATURAMINIMAC": float((daily.get("temperature_2m_min") or [0])[0] or 0),
-        "TEMPERATURAMAXIMAC": float((daily.get("temperature_2m_max") or [0])[0] or 0),
+        "TEMPERATURAMINIMAC": float(
+            (daily.get("temperature_2m_min") or [0])[0] or 0
+        ),
+        "TEMPERATURAMAXIMAC": float(
+            (daily.get("temperature_2m_max") or [0])[0] or 0
+        ),
         "CLASSIFICACAOCLIMA": weather_class,
         "PROVEDORCLIMA": "open-meteo",
         "DADOSBRUTOS": payload,

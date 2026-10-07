@@ -1,7 +1,7 @@
 import hashlib
 import json
 import re
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import growattServer
@@ -387,6 +387,103 @@ def fetch_growatt_payload() -> dict:
         "status": status,
         "temperature": clean_kwh(temperature_raw),
     }
+
+
+
+def _extract_generation_history_rows(payload: dict) -> list[dict]:
+    data = unwrap(payload)
+    if not isinstance(data, dict):
+        return []
+
+    raw_rows = (
+        data.get("energys")
+        or data.get("energies")
+        or data.get("records")
+        or data.get("datas")
+        or []
+    )
+
+    if not isinstance(raw_rows, list):
+        return []
+
+    rows = []
+    for item in raw_rows:
+        if not isinstance(item, dict):
+            continue
+
+        raw_date = item.get("date") or item.get("day") or item.get("time")
+        raw_energy = (
+            item.get("energy")
+            if item.get("energy") is not None
+            else item.get("generation")
+        )
+
+        if raw_date in (None, "") or raw_energy in (None, ""):
+            continue
+
+        date_text = str(raw_date).strip()[:10]
+        try:
+            date.fromisoformat(date_text)
+        except ValueError:
+            continue
+
+        energy = parse_number(raw_energy)
+        if energy is None:
+            continue
+
+        rows.append(
+            {
+                "date": date_text,
+                "energy_kwh": round(float(energy), 3),
+            }
+        )
+
+    return rows
+
+
+def fetch_generation_history(
+    start_date: date,
+    end_date: date,
+    plant_id: str | None = None,
+) -> list[dict]:
+    if end_date < start_date:
+        raise ValueError("end_date não pode ser anterior a start_date.")
+
+    token = env("GROWATT_API_TOKEN", required=True)
+    server_url = env("GROWATT_SERVER_URL", "https://openapi.growatt.com/v1/")
+    api = growattServer.OpenApiV1(token=token)
+
+    if hasattr(api, "server_url"):
+        api.server_url = server_url
+
+    station_id = str(plant_id or get_first_plant_id(api))
+    merged = {}
+    cursor = start_date
+
+    # A OpenAPI limita consultas diárias a janelas curtas. Dividimos em
+    # blocos de até 7 dias para consultas maiores sem depender do modelo.
+    while cursor <= end_date:
+        chunk_end = min(cursor + timedelta(days=6), end_date)
+        response = call_first(
+            api,
+            [
+                (
+                    "plant_energy_history",
+                    (station_id, cursor, chunk_end, "day", 1, 100),
+                ),
+                (
+                    "plant_energy_history_v1",
+                    (station_id, cursor, chunk_end, "day", 1, 100),
+                ),
+            ],
+        )
+
+        for row in _extract_generation_history_rows(response):
+            merged[row["date"]] = row
+
+        cursor = chunk_end + timedelta(days=1)
+
+    return [merged[key] for key in sorted(merged)]
 
 
 def _web_server() -> str:
