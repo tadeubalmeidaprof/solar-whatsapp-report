@@ -92,6 +92,29 @@ class AIToolsTests(unittest.TestCase):
             end_hour=17,
         )
 
+    @patch("ai.tools.get_performance_diagnostic")
+    def test_performance_diagnostic_tool(self, diagnostic):
+        diagnostic.return_value = {
+            "available": True,
+            "diagnostic": {"status": "normal"},
+        }
+
+        result = execute_tool(
+            "diagnosticar_desempenho_diario",
+            {
+                "report_date": "2026-10-07",
+                "start_hour": 7,
+                "end_hour": 17,
+            },
+        )
+
+        self.assertTrue(result["available"])
+        diagnostic.assert_called_once_with(
+            report_date="2026-10-07",
+            start_hour=7,
+            end_hour=17,
+        )
+
     def test_rejects_unknown_tool(self):
         with self.assertRaises(AIToolError):
             execute_tool("apagar_banco", {})
