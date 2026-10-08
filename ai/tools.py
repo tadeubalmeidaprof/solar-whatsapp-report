@@ -7,6 +7,7 @@ from solar_queries import (
     get_recent_generation,
     get_maintenance_status,
     get_plant_status,
+    get_performance_diagnostic,
     get_savings_summary,
     get_solar_generation_hours,
     get_weather_summary,
@@ -221,6 +222,42 @@ TOOL_DEFINITIONS = [
     {
         "type": "function",
         "function": {
+            "name": "diagnosticar_desempenho_diario",
+            "description": (
+                "Avalia se a geração de um dia faz sentido para o padrão da própria "
+                "usina, cruzando geração, horas de produção real, histórico, clima, "
+                "temperatura, falhas e alertas existentes. Use quando o usuário "
+                "perguntar se a usina está gerando pouco, se precisa de manutenção "
+                "ou se o desempenho do dia está normal. Padrão: 07:00-17:00."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "report_date": {
+                        "type": "string",
+                        "description": "Data no formato YYYY-MM-DD.",
+                    },
+                    "start_hour": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 23,
+                        "description": "Hora inicial. Padrão: 7.",
+                    },
+                    "end_hour": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 24,
+                        "description": "Hora final exclusiva. Padrão: 17.",
+                    },
+                },
+                "required": ["report_date"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "explicar_codigo_falha",
             "description": (
                 "Explica um código de erro ou aviso Growatt conhecido e, quando "
@@ -285,6 +322,11 @@ _TOOL_HANDLERS = {
     ),
     "consultar_horas_solares_usina": (
         "get_solar_generation_hours",
+        {"report_date"},
+        {"report_date", "start_hour", "end_hour"},
+    ),
+    "diagnosticar_desempenho_diario": (
+        "get_performance_diagnostic",
         {"report_date"},
         {"report_date", "start_hour", "end_hour"},
     ),
