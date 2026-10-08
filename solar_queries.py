@@ -1160,15 +1160,28 @@ def _safe_component(callback, *args) -> dict:
 def get_comprehensive_analysis() -> dict:
     now = datetime.now(REPORT_TIMEZONE)
     current_month = now.strftime("%Y-%m")
+    today = now.date().isoformat()
 
     return {
         "generated_at": now.isoformat(),
         "plant": _safe_component(get_plant_status),
         "active_faults": _safe_component(get_active_faults_summary),
         "maintenance": _safe_component(get_maintenance_status),
+        "maintenance_history": _safe_component(
+            get_real_maintenance_history,
+            5,
+        ),
         "weather_today": _safe_component(
             get_weather_summary,
-            now.date().isoformat(),
+            today,
+        ),
+        "curve_today": _safe_component(
+            get_curve_anomaly_analysis,
+            today,
+        ),
+        "performance_today": _safe_component(
+            get_performance_diagnostic,
+            today,
         ),
         "savings_current_month": _safe_component(
             get_savings_summary,
