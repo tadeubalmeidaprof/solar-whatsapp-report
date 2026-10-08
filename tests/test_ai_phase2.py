@@ -1,4 +1,6 @@
 import unittest
+
+import solar_queries
 from datetime import date, datetime
 from decimal import Decimal
 from unittest.mock import patch
@@ -8,6 +10,7 @@ from solar_queries import (
     get_fault_code_info,
     get_generation_period,
     get_monthly_generation,
+    get_performance_diagnostic,
     get_recent_generation,
     get_savings_summary,
     get_solar_generation_hours,
@@ -319,6 +322,33 @@ class SolarQueriesPhase2Tests(unittest.TestCase):
         self.assertGreater(result["active_generation_hours"], 0)
         self.assertGreater(result["equivalent_full_power_hours"], 0)
         self.assertEqual(result["generation_start"], "10:00")
+
+    @patch("solar_queries.fetch_plant_peak_power_kwp")
+    def test_performance_diagnostic_waits_until_window_finishes(
+        self,
+        peak_power,
+    ):
+        with patch("solar_queries.datetime", wraps=datetime) as mocked_datetime:
+            mocked_datetime.now.return_value = datetime(
+                2026,
+                10,
+                8,
+                14,
+                59,
+                tzinfo=solar_queries.REPORT_TIMEZONE,
+            )
+            result = get_performance_diagnostic(
+                "2026-10-08",
+                start_hour=7,
+                end_hour=17,
+            )
+
+        self.assertFalse(result["available"])
+        self.assertEqual(
+            result["status"],
+            "inconclusive_window_in_progress",
+        )
+        peak_power.assert_not_called()
 
 
 if __name__ == "__main__":
