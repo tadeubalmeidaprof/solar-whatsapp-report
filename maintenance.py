@@ -273,11 +273,24 @@ def analyze_operational_performance(
             }
         )
 
+    comparable_history = [
+        item
+        for item in valid_history
+        if abs(item["_active_hours"] - current_active_hours) <= 1.5
+    ]
+
+    if len(comparable_history) >= minimum_baseline_days:
+        selected_history = comparable_history
+        baseline_selection = "similar_generation_duration"
+    else:
+        selected_history = valid_history
+        baseline_selection = "all_qualified_days"
+
     recent_prior = []
-    baseline_rows = valid_history
-    if len(valid_history) >= minimum_baseline_days + 2:
-        recent_prior = valid_history[-2:]
-        baseline_rows = valid_history[:-2]
+    baseline_rows = selected_history
+    if len(selected_history) >= minimum_baseline_days + 2:
+        recent_prior = selected_history[-2:]
+        baseline_rows = selected_history[:-2]
 
     if len(baseline_rows) > 8:
         baseline_rows = baseline_rows[-8:]
@@ -298,6 +311,12 @@ def analyze_operational_performance(
         )
         return base_result
 
+    if baseline_selection == "all_qualified_days":
+        base_result["explanations"].append(
+            "Não havia dias suficientes com duração de geração muito parecida; "
+            "a referência precisou usar dias qualificados com durações diferentes."
+        )
+
     drop_percent = max(
         0.0,
         ((baseline_ratio - current_ratio) / baseline_ratio) * 100,
@@ -311,6 +330,7 @@ def analyze_operational_performance(
     base_result.update(
         {
             "baseline_days_used": len(baseline_rows),
+            "baseline_selection": baseline_selection,
             "baseline_average_power_fraction_of_peak": round(
                 baseline_ratio,
                 4,
