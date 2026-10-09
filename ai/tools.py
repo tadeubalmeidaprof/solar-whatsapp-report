@@ -15,6 +15,7 @@ from solar_queries import (
     get_solar_generation_hours,
     get_slow_degradation_analysis,
     get_weather_summary,
+    get_weather_generation_impact,
     get_weather_window_summary,
     record_maintenance_event,
 )
@@ -182,6 +183,39 @@ TOOL_DEFINITIONS = [
                         "minimum": 1,
                         "maximum": 24,
                         "description": "Hora final exclusiva. Padrão: 17.",
+                    },
+                },
+                "required": ["report_date"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "analisar_impacto_clima",
+            "description": (
+                "Avalia se o clima provavelmente contribuiu para a geração "
+                "do dia usando clima horário, geração observada e histórico "
+                "recente da própria usina. Não depende da curva ao vivo do "
+                "inversor e serve como fallback quando a API do fabricante falha."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "report_date": {
+                        "type": "string",
+                        "description": "Data no formato YYYY-MM-DD.",
+                    },
+                    "start_hour": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 23,
+                    },
+                    "end_hour": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 24,
                     },
                 },
                 "required": ["report_date"],
@@ -505,6 +539,11 @@ _TOOL_HANDLERS = {
     ),
     "consultar_clima": (
         "get_weather_window_summary",
+        {"report_date"},
+        {"report_date", "start_hour", "end_hour"},
+    ),
+    "analisar_impacto_clima": (
+        "get_weather_generation_impact",
         {"report_date"},
         {"report_date", "start_hour", "end_hour"},
     ),
