@@ -13,6 +13,7 @@ from solar_queries import (
     get_performance_diagnostic,
     get_savings_summary,
     get_solar_generation_hours,
+    get_slow_degradation_analysis,
     get_weather_summary,
     get_weather_window_summary,
     record_maintenance_event,
@@ -436,6 +437,33 @@ TOOL_DEFINITIONS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "consultar_degradacao_lenta",
+            "description": (
+                "Analisa perda operacional lenta/progressiva no histórico da "
+                "usina. Combina Theil-Sen, Mann-Kendall, EWMA/CUSUM, "
+                "persistência, qualidade dos dados, clima e histórico de "
+                "manutenção. Use para perguntas sobre degradação, perda "
+                "gradual de rendimento ou piora ao longo de semanas/meses."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "window_days": {
+                        "type": "integer",
+                        "minimum": 45,
+                        "maximum": 366,
+                        "description": (
+                            "Janela histórica em dias. Padrão: 180."
+                        ),
+                    },
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
     _no_arguments_tool(
         "analisar_usina",
         (
@@ -509,6 +537,11 @@ _TOOL_HANDLERS = {
         "get_maintenance_impact",
         set(),
         {"event_type", "days_before", "days_after"},
+    ),
+    "consultar_degradacao_lenta": (
+        "get_slow_degradation_analysis",
+        set(),
+        {"window_days"},
     ),
     "explicar_codigo_falha": (
         "get_fault_code_info",
