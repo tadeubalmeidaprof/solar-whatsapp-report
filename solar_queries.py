@@ -1,5 +1,6 @@
 import logging
 import os
+import time
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from statistics import median
@@ -46,6 +47,43 @@ MAX_HISTORY_DAYS = 93
 MAINTENANCE_ALERT_TYPES = ("inverter_offline", "possible_soiling")
 
 logger = logging.getLogger(__name__)
+
+_CURVE_PEAK_POWER_KWP_CACHE = None
+
+
+def _curve_peak_power_kwp(station_id: str) -> float | None:
+    global _CURVE_PEAK_POWER_KWP_CACHE
+
+    if (
+        _CURVE_PEAK_POWER_KWP_CACHE is not None
+        and _CURVE_PEAK_POWER_KWP_CACHE > 0
+    ):
+        return _CURVE_PEAK_POWER_KWP_CACHE
+
+    last_error = None
+    for attempt in range(1, 4):
+        try:
+            value = fetch_plant_peak_power_kwp(
+                plant_id=station_id,
+            )
+            if value is not None and value > 0:
+                _CURVE_PEAK_POWER_KWP_CACHE = float(value)
+                return _CURVE_PEAK_POWER_KWP_CACHE
+        except Exception as exc:
+            last_error = exc
+            logger.warning(
+                "Falha ao obter potência pico Growatt (tentativa %s/3): %s",
+                attempt,
+                type(exc).__name__,
+            )
+
+        if attempt < 3:
+            time.sleep(attempt)
+
+    if last_error is not None:
+        raise last_error
+
+    return None
 
 
 def _iso_or_text(value):
@@ -871,9 +909,7 @@ def get_solar_generation_hours(
         raise ValueError("O horário final deve ser posterior ao inicial.")
 
     station_id = _station_id()
-    peak_power_kwp = fetch_plant_peak_power_kwp(
-        plant_id=station_id,
-    )
+    peak_power_kwp = _curve_peak_power_kwp(station_id)
     rows = fetch_plant_power_curve(
         report_date=parsed_date,
         plant_id=station_id,
@@ -945,9 +981,7 @@ def get_performance_diagnostic(
             }
 
     station_id = _station_id()
-    peak_power_kwp = fetch_plant_peak_power_kwp(
-        plant_id=station_id,
-    )
+    peak_power_kwp = _curve_peak_power_kwp(station_id)
     if peak_power_kwp is None or peak_power_kwp <= 0:
         return {
             "available": False,
@@ -1452,9 +1486,7 @@ def collect_curve_analysis_for_date(
         raise ValueError("O horário final deve ser posterior ao inicial.")
 
     station_id = _station_id()
-    peak_power_kwp = fetch_plant_peak_power_kwp(
-        plant_id=station_id,
-    )
+    peak_power_kwp = _curve_peak_power_kwp(station_id)
     if peak_power_kwp is None or peak_power_kwp <= 0:
         return {
             "available": False,
