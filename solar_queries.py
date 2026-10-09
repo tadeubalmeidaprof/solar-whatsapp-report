@@ -906,7 +906,9 @@ def get_solar_generation_hours(
         raise ValueError("O horário final deve ser posterior ao inicial.")
 
     station_id = _station_id()
-    peak_power_kwp = fetch_plant_peak_power_kwp(\n        plant_id=station_id,\n    )
+    peak_power_kwp = fetch_plant_peak_power_kwp(
+        plant_id=station_id,
+    )
     rows = fetch_plant_power_curve(
         report_date=parsed_date,
         plant_id=station_id,
@@ -978,7 +980,9 @@ def get_performance_diagnostic(
             }
 
     station_id = _station_id()
-    peak_power_kwp = fetch_plant_peak_power_kwp(\n        plant_id=station_id,\n    )
+    peak_power_kwp = fetch_plant_peak_power_kwp(
+        plant_id=station_id,
+    )
     if peak_power_kwp is None or peak_power_kwp <= 0:
         return {
             "available": False,
