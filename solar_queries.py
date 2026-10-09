@@ -48,17 +48,13 @@ MAINTENANCE_ALERT_TYPES = ("inverter_offline", "possible_soiling")
 
 logger = logging.getLogger(__name__)
 
-_CURVE_PEAK_POWER_KWP_CACHE = None
+_CURVE_PEAK_POWER_KWP_CACHE: dict[str, float] = {}
 
 
 def _curve_peak_power_kwp(station_id: str) -> float | None:
-    global _CURVE_PEAK_POWER_KWP_CACHE
-
-    if (
-        _CURVE_PEAK_POWER_KWP_CACHE is not None
-        and _CURVE_PEAK_POWER_KWP_CACHE > 0
-    ):
-        return _CURVE_PEAK_POWER_KWP_CACHE
+    cached = _CURVE_PEAK_POWER_KWP_CACHE.get(str(station_id))
+    if cached is not None and cached > 0:
+        return cached
 
     last_error = None
     for attempt in range(1, 4):
@@ -67,8 +63,9 @@ def _curve_peak_power_kwp(station_id: str) -> float | None:
                 plant_id=station_id,
             )
             if value is not None and value > 0:
-                _CURVE_PEAK_POWER_KWP_CACHE = float(value)
-                return _CURVE_PEAK_POWER_KWP_CACHE
+                resolved = float(value)
+                _CURVE_PEAK_POWER_KWP_CACHE[str(station_id)] = resolved
+                return resolved
         except Exception as exc:
             last_error = exc
             logger.warning(
@@ -909,7 +906,7 @@ def get_solar_generation_hours(
         raise ValueError("O horário final deve ser posterior ao inicial.")
 
     station_id = _station_id()
-    peak_power_kwp = _curve_peak_power_kwp(station_id)
+    peak_power_kwp = fetch_plant_peak_power_kwp(\n        plant_id=station_id,\n    )
     rows = fetch_plant_power_curve(
         report_date=parsed_date,
         plant_id=station_id,
@@ -981,7 +978,7 @@ def get_performance_diagnostic(
             }
 
     station_id = _station_id()
-    peak_power_kwp = _curve_peak_power_kwp(station_id)
+    peak_power_kwp = fetch_plant_peak_power_kwp(\n        plant_id=station_id,\n    )
     if peak_power_kwp is None or peak_power_kwp <= 0:
         return {
             "available": False,
