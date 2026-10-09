@@ -8,6 +8,7 @@ from solar_queries import (
     get_recent_generation,
     get_real_maintenance_history,
     get_maintenance_status,
+    get_maintenance_impact,
     get_plant_status,
     get_performance_diagnostic,
     get_savings_summary,
@@ -285,10 +286,11 @@ TOOL_DEFINITIONS = [
         "function": {
             "name": "analisar_curva_geracao",
             "description": (
-                "Analisa o formato da curva de potência do dia e procura padrões "
-                "como interrupções no meio do dia, quedas bruscas, patamares "
-                "anormais, início tardio, fim precoce e pico suprimido. "
-                "Usa histórico e clima para reduzir falsos positivos."
+                "Analisa a curva de potência contra o histórico da própria usina. "
+                "Retorna score de anomalia 0-100, componentes de forma, energia, "
+                "pico, interrupções, janela produtiva, volatilidade e telemetria, "
+                "além de persistência e confiança. Usa recência e clima para "
+                "selecionar dias comparáveis."
             ),
             "parameters": {
                 "type": "object",
@@ -395,6 +397,45 @@ TOOL_DEFINITIONS = [
             },
         },
     },
+
+    {
+        "type": "function",
+        "function": {
+            "name": "avaliar_impacto_manutencao",
+            "description": (
+                "Compara o desempenho antes e depois da última manutenção real "
+                "registrada, preferindo dias com clima semelhante. Use quando "
+                "o usuário perguntar se limpeza, reparo ou outra intervenção "
+                "melhorou ou piorou o desempenho."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "event_type": {
+                        "type": "string",
+                        "description": (
+                            "Tipo opcional: cleaning, inspection, preventive, "
+                            "corrective, repair, replacement, electrical, "
+                            "inverter, panel ou other."
+                        ),
+                    },
+                    "days_before": {
+                        "type": "integer",
+                        "minimum": 3,
+                        "maximum": 30,
+                        "description": "Janela antes da manutenção. Padrão: 7.",
+                    },
+                    "days_after": {
+                        "type": "integer",
+                        "minimum": 3,
+                        "maximum": 30,
+                        "description": "Janela depois da manutenção. Padrão: 7.",
+                    },
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
     _no_arguments_tool(
         "analisar_usina",
         (
@@ -463,6 +504,11 @@ _TOOL_HANDLERS = {
         "record_maintenance_event",
         {"event_date", "event_type", "description"},
         {"event_date", "event_type", "description", "performed_by", "notes"},
+    ),
+    "avaliar_impacto_manutencao": (
+        "get_maintenance_impact",
+        set(),
+        {"event_type", "days_before", "days_after"},
     ),
     "explicar_codigo_falha": (
         "get_fault_code_info",
