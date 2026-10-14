@@ -1,0 +1,57 @@
+name: Explicação científica Growatt
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/generation-model-smoke.yml"
+      - "generation_model.py"
+      - "generation_explanation.py"
+      - "pv_site.json"
+      - "weather.py"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: growatt-curve-api
+  cancel-in-progress: false
+
+jobs:
+  validar-dados-reais:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: ".python-version"
+      - run: pip install -r requirements.txt
+      - name: Validar somente leitura e qualidade do modelo
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GROWATT_API_TOKEN: ${{ secrets.GROWATT_API_TOKEN }}
+          GROWATT_PLANT_ID: ${{ secrets.GROWATT_PLANT_ID }}
+          GROWATT_SERVER_URL: ${{ secrets.GROWATT_SERVER_URL }}
+          STATION_LATITUDE: ${{ secrets.STATION_LATITUDE }}
+          STATION_LONGITUDE: ${{ secrets.STATION_LONGITUDE }}
+        run: |
+          python - <<'PY'
+          import json
+          from datetime import datetime, timedelta
+          from zoneinfo import ZoneInfo
+          from generation_explanation import get_generation_explanation
+
+          target = (datetime.now(ZoneInfo("America/Bahia")).date() - timedelta(days=1)).isoformat()
+          result = get_generation_explanation(target)
+          safe = {key: result.get(key) for key in (
+              "available", "status", "model_type", "historical_days", "telemetry_coverage_percent",
+          )}
+          validation = result.get("validation") or {}
+          safe["validation"] = {key: validation.get(key) for key in (
+              "days", "mae_kwh", "rmse_kwh", "normalized_rmse_percent", "model_beats_baseline",
+          )}
+          print(json.dumps(safe, ensure_ascii=False))
+          if result.get("status") in ("weather_unavailable", "insufficient_data_coverage"):
+              raise SystemExit("Dados reais insuficientes para validar o fluxo explicativo.")
+          PY

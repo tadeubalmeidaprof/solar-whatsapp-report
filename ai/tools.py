@@ -19,6 +19,7 @@ from solar_queries import (
     get_weather_window_summary,
     record_maintenance_event,
 )
+from generation_explanation import get_generation_explanation
 
 
 def _no_arguments_tool(name: str, description: str) -> dict:
@@ -37,6 +38,27 @@ def _no_arguments_tool(name: str, description: str) -> dict:
 
 
 TOOL_DEFINITIONS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "explicar_geracao_diaria",
+            "description": (
+                "Explica quantitativamente por que a geração de um dia ficou alta ou baixa. "
+                "Cruza curva real, radiação horária e posição solar, com ajuste robusto e "
+                "validação cronológica. Retorna faixa empírica, erro histórico e limitações. "
+                "Usa somente horas já consolidadas em dias parciais. Padrão: 07:00–17:00."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "report_date": {"type": "string", "description": "Data YYYY-MM-DD."},
+                    "start_hour": {"type": "integer", "minimum": 0, "maximum": 23},
+                    "end_hour": {"type": "integer", "minimum": 1, "maximum": 24},
+                },
+                "required": ["report_date"], "additionalProperties": False,
+            },
+        },
+    },
     _no_arguments_tool(
         "consultar_resumo_usina",
         (
@@ -514,6 +536,9 @@ class AIToolError(RuntimeError):
 
 
 _TOOL_HANDLERS = {
+    "explicar_geracao_diaria": (
+        "get_generation_explanation", {"report_date"}, {"report_date", "start_hour", "end_hour"},
+    ),
     "consultar_resumo_usina": ("get_plant_status", set(), set()),
     "consultar_falhas_ativas": ("get_active_faults_summary", set(), set()),
     "consultar_manutencao": ("get_maintenance_status", set(), set()),
