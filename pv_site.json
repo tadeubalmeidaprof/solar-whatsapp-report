@@ -1,0 +1,10 @@
+{
+  "dc_capacity_kwp": 8.4,
+  "ac_capacity_kw": 8.0,
+  "module_model": "DAH DHJ-66Y18/DG",
+  "module_power_w": 700,
+  "gamma_pdc_per_c": -0.0024,
+  "surface_tilt_deg": null,
+  "surface_azimuth_deg": null,
+  "module_datasheet": "https://static.souenergy.com.br/catalog/product/file/Datasheet_-_DAH_700_Bifacial_-_DHJ-66Y18DG.pdf"
+}

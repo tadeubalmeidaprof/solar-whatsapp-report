@@ -1,6 +1,7 @@
 import os
 import time
 from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import requests
 
@@ -21,6 +22,47 @@ class WeatherProviderError(RuntimeError):
 
 class WeatherRateLimitError(WeatherProviderError):
     pass
+
+
+def get_generation_model_weather(latitude: float, longitude: float,
+                                 start_date: date, end_date: date) -> list[dict]:
+    """Bulk hourly inputs. Radiation at HH:00 averages HH-1:00..HH:00."""
+    today = datetime.now(ZoneInfo("America/Bahia")).date()
+    if end_date > today or start_date > end_date or (end_date - start_date).days > 120:
+        raise ValueError("Intervalo climático do modelo inválido.")
+    cutoff = today - timedelta(days=RECENT_HISTORY_DAYS)
+    ranges = []
+    if start_date < cutoff:
+        ranges.append((OPEN_METEO_ARCHIVE_URL, start_date, min(end_date, cutoff - timedelta(days=1))))
+    if end_date >= cutoff:
+        ranges.append((OPEN_METEO_FORECAST_URL, max(start_date, cutoff), end_date))
+    rows = []
+    mapping = {
+        "temperature_c": "temperature_2m",
+        "shortwave_radiation_w_m2": "shortwave_radiation",
+        "direct_normal_irradiance_w_m2": "direct_normal_irradiance",
+        "diffuse_radiation_w_m2": "diffuse_radiation",
+        "wind_speed_m_s": "wind_speed_10m",
+    }
+    for url, first, last in ranges:
+        payload = _request_open_meteo(url, {
+            "latitude": latitude, "longitude": longitude,
+            "hourly": ",".join(mapping.values()), "wind_speed_unit": "ms",
+            "timezone": "America/Bahia", "start_date": first.isoformat(), "end_date": last.isoformat(),
+        })
+        hourly = payload.get("hourly") or {}
+        for index, stamp in enumerate(hourly.get("time") or []):
+            try:
+                timestamp = datetime.fromisoformat(stamp).replace(tzinfo=ZoneInfo("America/Bahia"))
+            except (TypeError, ValueError):
+                continue
+            row = {"timestamp": timestamp,
+                   "source": "open-meteo-reanalysis" if url == OPEN_METEO_ARCHIVE_URL else "open-meteo-recent-model"}
+            for key, name in mapping.items():
+                values = hourly.get(name) or []
+                row[key] = values[index] if index < len(values) else None
+            rows.append(row)
+    return rows
 
 
 def classify_weather(

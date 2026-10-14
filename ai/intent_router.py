@@ -89,6 +89,23 @@ def detect_local_intent(
         today,
     )
 
+    explanation = _has_phrase(normalized, ("por que", "porque", "qual o motivo")) or _has_any(
+        tokens, ("justifique", "justificar", "explique", "explicar", "motivo", "causa"),
+    )
+    generation = _has_any(tokens, ("geracao", "producao", "gerou", "gerei", "produziu", "gerando"))
+    if explanation and generation:
+        # Explicit dates/intervals need the model's date parser, not a silent 'today'.
+        if re.search(r"\d", normalized) or _has_any(tokens, (
+            "janeiro", "fevereiro", "marco", "abril", "maio", "junho", "julho",
+            "agosto", "setembro", "outubro", "novembro", "dezembro", "mes", "semana",
+        )):
+            return None
+        return {
+            "intent": "generation_explanation", "tool": "explicar_geracao_diaria",
+            "arguments": {"report_date": (target_date or today).isoformat()},
+            "confidence": "high",
+        }
+
     performance_words = (
         "desempenho",
         "rendimento",

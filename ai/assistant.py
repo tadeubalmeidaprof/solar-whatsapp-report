@@ -10,6 +10,7 @@ from ai.memory import load_recent_messages, save_conversation_exchange
 from ai.prompt import SYSTEM_PROMPT
 from ai.provider import AIProviderError, AIRateLimitError, create_chat_completion
 from ai.tools import AIToolError, TOOL_DEFINITIONS, execute_tool
+from generation_explanation import format_generation_explanation
 
 
 logger = logging.getLogger(__name__)
@@ -798,6 +799,11 @@ def _format_standard_tool_result(
     tool_name: str,
     result: dict,
 ) -> str | None:
+    if tool_name == "explicar_geracao_diaria":
+        if not result.get("ok"):
+            return str(result.get("error") or "Não consegui justificar a geração agora.")
+        payload = result.get("data")
+        return format_generation_explanation(payload) if isinstance(payload, dict) else None
     formatters = {
         "diagnosticar_desempenho_diario": _format_performance_tool_result,
         "consultar_resumo_usina": _format_status_tool_result,
