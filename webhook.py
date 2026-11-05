@@ -33,8 +33,14 @@ _executor = ThreadPoolExecutor(
     thread_name_prefix="green-webhook",
 )
 
-_RECENT_MESSAGE_TTL_SECONDS = 3600
-_MAX_RECENT_MESSAGE_IDS = 1000
+# A GREEN-API reenvia notificações não confirmadas a cada minuto por até 24 h
+# (skill green-api-webhooks). A janela de deduplicação cobre esse prazo com folga,
+# para um reenvio tardio não gerar uma segunda resposta ao cliente.
+_RECENT_MESSAGE_TTL_SECONDS = 26 * 3600
+_MAX_RECENT_MESSAGE_IDS = 5000
+
+# Estados da instância em que o bot não consegue receber nem enviar mensagens.
+_INSTANCE_DOWN_STATES = {"notAuthorized", "blocked", "sleepMode", "suspended", "yellowCard"}
 _recent_message_ids: dict[str, float] = {}
 _recent_message_lock = Lock()
 
@@ -64,7 +70,27 @@ def _expected_authorization_header() -> str:
 def webhook_authorized(authorization_header: str) -> bool:
     expected = _expected_authorization_header()
     actual = str(authorization_header or "").strip()
-    return hmac.compare_digest(actual, expected)
+    if not actual:
+        return False
+    # Compara em bytes: hmac.compare_digest recusa textos com caracteres não ASCII,
+    # e um cabeçalho assim não pode virar erro 500 (que faria a GREEN-API reenviar).
+    return hmac.compare_digest(
+        actual.encode("utf-8", "surrogateescape"),
+        expected.encode("utf-8", "surrogateescape"),
+    )
+
+
+def log_instance_state(payload: dict) -> None:
+    """Registra quando o número do bot desconecta ou volta, para não falhar em silêncio."""
+    state = str(payload.get("stateInstance") or "").strip()
+    if state in _INSTANCE_DOWN_STATES:
+        logger.warning(
+            "Instância GREEN-API mudou para '%s': o bot não recebe nem envia "
+            "mensagens até o WhatsApp ser reconectado.",
+            state,
+        )
+    elif state:
+        logger.info("Instância GREEN-API mudou para '%s'.", state)
 
 
 def _green_api_settings() -> tuple[str, str, str]:
@@ -287,6 +313,10 @@ def green_api_webhook():
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
         return "", 400
+
+    if payload.get("typeWebhook") == "stateInstanceChanged":
+        log_instance_state(payload)
+        return "", 200
 
     if payload.get("typeWebhook") != "incomingMessageReceived":
         return "", 200
