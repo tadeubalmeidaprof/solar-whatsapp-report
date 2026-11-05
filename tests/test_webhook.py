@@ -220,6 +220,55 @@ class WebhookSecurityTests(unittest.TestCase):
             "Olá",
         )
 
+    def test_authorization_with_non_ascii_header_is_rejected_not_crashed(self):
+        with patch.dict("os.environ", BASE_ENV, clear=True):
+            self.assertFalse(webhook.webhook_authorized("Bearer secreto-ç"))
+            self.assertFalse(webhook.webhook_authorized(""))
+
+            client = webhook.app.test_client()
+            response = client.post(
+                "/webhook/green-api",
+                headers={"Authorization": "Bearer çãõ".encode("utf-8").decode("latin-1")},
+                json={},
+            )
+
+        self.assertEqual(response.status_code, 401)
+
+    def test_duplicate_is_still_detected_after_late_retry(self):
+        # A GREEN-API reenvia por até 24 h; um reenvio 23 h depois continua sendo duplicado.
+        with patch("webhook.time.monotonic", return_value=1_000.0):
+            self.assertFalse(webhook._is_duplicate_message("late-retry"))
+        with patch("webhook.time.monotonic", return_value=1_000.0 + 23 * 3600):
+            self.assertTrue(webhook._is_duplicate_message("late-retry"))
+
+    def test_instance_disconnect_is_logged_as_warning(self):
+        payload = {
+            "typeWebhook": "stateInstanceChanged",
+            "instanceData": {"idInstance": int(INSTANCE_ID)},
+            "stateInstance": "notAuthorized",
+        }
+
+        with patch.dict("os.environ", BASE_ENV, clear=True):
+            client = webhook.app.test_client()
+            with self.assertLogs(webhook.logger, level="WARNING") as logs:
+                response = client.post(
+                    "/webhook/green-api",
+                    headers={"Authorization": f"Bearer {WEBHOOK_TOKEN}"},
+                    json=payload,
+                )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("notAuthorized", logs.output[0])
+
+    def test_instance_state_change_requires_authorization(self):
+        payload = {"typeWebhook": "stateInstanceChanged", "stateInstance": "notAuthorized"}
+
+        with patch.dict("os.environ", BASE_ENV, clear=True):
+            client = webhook.app.test_client()
+            response = client.post("/webhook/green-api", json=payload)
+
+        self.assertEqual(response.status_code, 401)
+
 
 class MessageProcessingTests(unittest.TestCase):
     @patch("webhook._executor.submit")
