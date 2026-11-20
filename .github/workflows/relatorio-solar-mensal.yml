@@ -46,8 +46,7 @@ jobs:
           GREEN_API_ID: ${{ secrets.GREEN_API_ID }}
           GREEN_API_TOKEN: ${{ secrets.GREEN_API_TOKEN }}
           GREEN_API_CHAT_ID: ${{ secrets.GREEN_API_CHAT_ID }}
-          WHATSAPP_PHONE_2: ${{ secrets.WHATSAPP_PHONE_2 }}
-          WHATSAPP_APIKEY_2: ${{ secrets.WHATSAPP_APIKEY_2 }}
+          GREEN_API_CHAT_ID_2: ${{ secrets.GREEN_API_CHAT_ID_2 }}
           ENERGY_TARIFF: ${{ secrets.ENERGY_TARIFF }}
           AVERAGE_CONSUMPTION_KWH: ${{ secrets.AVERAGE_CONSUMPTION_KWH }}
           TUSD_FIO_B_KWH: ${{ secrets.TUSD_FIO_B_KWH }}
