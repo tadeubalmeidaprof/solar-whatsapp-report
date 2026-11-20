@@ -317,13 +317,36 @@ def build_recovery_message(fault: dict, resolved_at: datetime, live: dict) -> st
 
 
 def send_message(message: str) -> None:
+    api_url = env("GREEN_API_URL")
+    id_instance = required_env("GREEN_API_ID")
+    api_token = required_env("GREEN_API_TOKEN")
+
+    # Destinatário principal: se falhar, a exceção sobe e o alerta não é
+    # marcado como notificado, para ser reenviado na próxima execução.
     send_green_api(
-        api_url=env("GREEN_API_URL"),
-        id_instance=required_env("GREEN_API_ID"),
-        api_token=required_env("GREEN_API_TOKEN"),
+        api_url=api_url,
+        id_instance=id_instance,
+        api_token=api_token,
         chat_id=required_env("GREEN_API_CHAT_ID"),
         message=message,
     )
+
+    # Segundo destinatário (Rangel): melhor esforço. Uma falha aqui não pode
+    # impedir a marcação, senão o principal receberia o alerta repetido.
+    chat_id_2 = env("GREEN_API_CHAT_ID_2")
+    if not chat_id_2:
+        return
+
+    try:
+        send_green_api(
+            api_url=api_url,
+            id_instance=id_instance,
+            api_token=api_token,
+            chat_id=chat_id_2,
+            message=message,
+        )
+    except Exception as exc:
+        print(f"Falha ao enviar alerta para o segundo destinatário: {exc}")
 
 
 def import_faults(
