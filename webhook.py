@@ -17,7 +17,7 @@ from bot import (
     is_menu_request,
 )
 from config import env, required_env
-from whatsapp import send_green_api, send_green_api_interactive
+from whatsapp import normalize_chat_id, send_green_api, send_green_api_interactive
 
 
 logging.basicConfig(
@@ -49,8 +49,32 @@ def authorized_chat_id() -> str:
     return required_env("AUTHORIZED_CHAT_ID")
 
 
+def _same_chat(a: str, b: str) -> bool:
+    try:
+        return bool(a and b) and normalize_chat_id(a) == normalize_chat_id(b)
+    except ValueError:
+        return False
+
+
+def authorized_chat_ids() -> list[str]:
+    """Chat principal (Tadeu) e, opcionalmente, AUTHORIZED_CHAT_ID_2 (Rangel)."""
+    ids = [authorized_chat_id()]
+    second = env("AUTHORIZED_CHAT_ID_2")
+    if second:
+        ids.append(second)
+    return ids
+
+
+def is_authorized_chat(incoming_chat_id: str) -> bool:
+    return any(_same_chat(incoming_chat_id, allowed) for allowed in authorized_chat_ids())
+
+
 def reply_chat_id(incoming_chat_id: str) -> str:
-    return env("GREEN_API_REPLY_CHAT_ID") or incoming_chat_id
+    # GREEN_API_REPLY_CHAT_ID vale só para o chat principal; os demais
+    # recebem a resposta no próprio chat de onde a mensagem veio.
+    if _same_chat(incoming_chat_id, authorized_chat_id()):
+        return env("GREEN_API_REPLY_CHAT_ID") or incoming_chat_id
+    return incoming_chat_id
 
 
 def authorized_instance_id() -> str:
@@ -279,8 +303,8 @@ def _send_menu(chat_id: str) -> None:
 
 def process_message(chat_id: str, body: str) -> None:
     try:
-        if chat_id != authorized_chat_id():
-            logger.info("Mensagem ignorada de chat não autorizado.")
+        if not is_authorized_chat(chat_id):
+            logger.info("Mensagem ignorada de chat não autorizado: %s", chat_id)
             return
 
         target_chat_id = reply_chat_id(chat_id)

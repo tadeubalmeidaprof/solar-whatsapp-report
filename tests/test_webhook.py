@@ -391,3 +391,26 @@ class MessageProcessingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SecondAuthorizedChatTest(unittest.TestCase):
+    RANGEL = "5577888887777@c.us"
+
+    @patch("webhook.build_reply", return_value="resposta")
+    @patch("webhook.send_green_api")
+    def test_second_chat_gets_reply_in_own_chat(self, send_text, _build):
+        env_vars = dict(BASE_ENV, AUTHORIZED_CHAT_ID_2="+55 77 88888-7777")
+        with patch.dict("os.environ", env_vars, clear=True):
+            webhook.process_message(self.RANGEL, "quanto gerou hoje?")
+
+        send_text.assert_called_once()
+        self.assertEqual(send_text.call_args.kwargs["chat_id"], self.RANGEL)
+
+    @patch("webhook.send_green_api")
+    @patch("webhook.send_green_api_interactive")
+    def test_second_chat_ignored_when_not_configured(self, send_interactive, send_text):
+        with patch.dict("os.environ", BASE_ENV, clear=True):
+            webhook.process_message(self.RANGEL, "Olá!")
+
+        send_interactive.assert_not_called()
+        send_text.assert_not_called()
