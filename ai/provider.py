@@ -1,6 +1,11 @@
+import logging
 import os
 
 import requests
+
+
+logger = logging.getLogger(__name__)
+MAX_TOOL_USE_RETRIES = 1
 
 
 GROQ_CHAT_COMPLETIONS_URL = "https://api.groq.com/openai/v1/chat/completions"
@@ -72,8 +77,38 @@ def create_chat_completion(messages: list[dict], tools: list[dict]) -> dict:
         "max_completion_tokens": max_tokens,
     }
 
+    for attempt in range(MAX_TOOL_USE_RETRIES + 1):
+        response = _post(api_key, payload, timeout)
+        if response.status_code == 400 and _is_tool_use_failed(response) and attempt < MAX_TOOL_USE_RETRIES:
+            # O modelo gerou uma chamada de ferramenta malformada; uma nova
+            # tentativa costuma resolver.
+            logger.warning("Groq tool_use_failed; tentando novamente.")
+            continue
+        break
+
+    return _parse_response(response)
+
+
+def _error_detail(response) -> str:
     try:
-        response = requests.post(
+        error = (response.json() or {}).get("error") or {}
+        code = error.get("code") or error.get("type") or ""
+        message = str(error.get("message") or "")[:300]
+        return f"{code}: {message}".strip(": ")
+    except ValueError:
+        return response.text[:300]
+
+
+def _is_tool_use_failed(response) -> bool:
+    try:
+        return ((response.json() or {}).get("error") or {}).get("code") == "tool_use_failed"
+    except ValueError:
+        return False
+
+
+def _post(api_key: str, payload: dict, timeout: float):
+    try:
+        return requests.post(
             GROQ_CHAT_COMPLETIONS_URL,
             headers={
                 "Authorization": f"Bearer {api_key}",
@@ -87,6 +122,8 @@ def create_chat_completion(messages: list[dict], tools: list[dict]) -> dict:
     except requests.RequestException:
         raise AIProviderError("Falha de rede ao consultar a Groq.") from None
 
+
+def _parse_response(response) -> dict:
     if response.status_code == 429:
         raise AIRateLimitError("Limite de requisições da Groq atingido.")
 
@@ -95,7 +132,8 @@ def create_chat_completion(messages: list[dict], tools: list[dict]) -> dict:
 
     if not response.ok:
         raise AIProviderError(
-            f"Groq rejeitou a requisição com HTTP {response.status_code}."
+            f"Groq rejeitou a requisição com HTTP {response.status_code}: "
+            f"{_error_detail(response)}"
         )
 
     try:
