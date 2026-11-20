@@ -91,3 +91,14 @@ class GreenApiInteractiveTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NormalizeChatIdTest(unittest.TestCase):
+    def test_accepts_formatted_phone(self):
+        from whatsapp import normalize_chat_id
+        self.assertEqual(normalize_chat_id("+55 (77) 99999-8888"), "5577999998888@c.us")
+
+    def test_keeps_existing_chat_id(self):
+        from whatsapp import normalize_chat_id
+        self.assertEqual(normalize_chat_id(" 5577999998888@c.us "), "5577999998888@c.us")
+        self.assertEqual(normalize_chat_id("123@lid"), "123@lid")

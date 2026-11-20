@@ -38,6 +38,18 @@ def send_whatsapp_to(phone: str, apikey: str, message: str) -> bool:
     return True
 
 
+def normalize_chat_id(chat_id: str) -> str:
+    """Aceita 55DDDNUMERO@c.us, @g.us, @lid ou só o telefone (+55 77 9...)."""
+    value = str(chat_id or "").strip()
+    if "@" in value:
+        return value.replace(" ", "")
+
+    digits = "".join(ch for ch in value if ch.isdigit())
+    if not digits:
+        raise ValueError("chatId da GREEN-API vazio ou inválido.")
+    return f"{digits}@c.us"
+
+
 def send_green_api(
     api_url: str,
     id_instance: str,
@@ -52,7 +64,7 @@ def send_green_api(
         response = requests.post(
             url,
             json={
-                "chatId": chat_id,
+                "chatId": normalize_chat_id(chat_id),
                 "message": message,
             },
             timeout=30,
