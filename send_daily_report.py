@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 from config import env, required_env
 from growatt_client import fetch_growatt_payload
 from utils import br_number
-from whatsapp import send_green_api, send_whatsapp_to
+from whatsapp import send_green_api
 
 
 REPORT_TIMEZONE = ZoneInfo("America/Bahia")
@@ -55,22 +55,23 @@ def send_daily_report(payload: dict) -> None:
         send_errors.append(f"GREEN-API: {exc}")
         print(f"Falha ao enviar para Tadeu pela GREEN-API: {exc}")
 
-    phone_2 = env("WHATSAPP_PHONE_2")
-    apikey_2 = env("WHATSAPP_APIKEY_2")
+    chat_id_2 = env("GREEN_API_CHAT_ID_2")
 
-    if phone_2 and apikey_2:
-        print("Mensagem para segunda pessoa:")
+    if chat_id_2:
+        print("Mensagem para Rangel:")
         print(message_pessoa2)
 
         try:
-            send_whatsapp_to(
-                phone_2,
-                apikey_2,
-                message_pessoa2,
+            send_green_api(
+                api_url=env("GREEN_API_URL"),
+                id_instance=required_env("GREEN_API_ID"),
+                api_token=required_env("GREEN_API_TOKEN"),
+                chat_id=chat_id_2,
+                message=message_pessoa2,
             )
         except Exception as exc:
-            send_errors.append(f"CallMeBot: {exc}")
-            print(f"Falha ao enviar para a segunda pessoa pelo CallMeBot: {exc}")
+            send_errors.append(f"GREEN-API (Rangel): {exc}")
+            print(f"Falha ao enviar para Rangel pela GREEN-API: {exc}")
     else:
         print("Segundo número não configurado. Enviado apenas para o número principal.")
 

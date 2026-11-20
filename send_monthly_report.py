@@ -8,7 +8,7 @@ from config import env, required_env
 from database import fetch_generation_for_month
 from savings_calculator import calculate_savings_with_fio_b
 from utils import br_number, to_decimal
-from whatsapp import send_green_api, send_whatsapp_to
+from whatsapp import send_green_api
 
 
 REPORT_TIMEZONE = ZoneInfo("America/Bahia")
@@ -115,7 +115,7 @@ Valor estimado com base na geração registrada no monitoramento solar.
 
 
 def should_send_to_second_person() -> bool:
-    return bool(os.getenv("WHATSAPP_PHONE_2", "").strip() and os.getenv("WHATSAPP_APIKEY_2", "").strip())
+    return bool(os.getenv("GREEN_API_CHAT_ID_2", "").strip())
 
 
 def main():
@@ -201,14 +201,16 @@ def main():
         print(message_rangel)
 
         try:
-            send_whatsapp_to(
-                env("WHATSAPP_PHONE_2"),
-                env("WHATSAPP_APIKEY_2"),
-                message_rangel,
+            send_green_api(
+                api_url=env("GREEN_API_URL"),
+                id_instance=required_env("GREEN_API_ID"),
+                api_token=required_env("GREEN_API_TOKEN"),
+                chat_id=env("GREEN_API_CHAT_ID_2"),
+                message=message_rangel,
             )
         except Exception as exc:
-            send_errors.append(f"CallMeBot: {exc}")
-            print(f"Falha ao enviar para Rangel pelo CallMeBot: {exc}")
+            send_errors.append(f"GREEN-API (Rangel): {exc}")
+            print(f"Falha ao enviar para Rangel pela GREEN-API: {exc}")
     else:
         print("Segundo número não configurado. Enviado apenas para o número principal.")
 
