@@ -74,14 +74,44 @@ def _month_key(normalized: str, today: date) -> str | None:
     return None
 
 
+MONTH_NAMES = (
+    "janeiro", "fevereiro", "marco", "abril", "maio", "junho", "julho",
+    "agosto", "setembro", "outubro", "novembro", "dezembro",
+)
+_PERIOD_TOKENS = ("mes", "meses", "semana", "semanas", "ano", "anos", "trimestre") + MONTH_NAMES
+_PERIOD_PHRASES = ("ultimos", "ultimas", "desde", "periodo", "ultimo mes", "mes passado")
+
+
+def has_broad_period(normalized: str) -> bool:
+    """True quando a pergunta fala de um período maior que um dia.
+
+    Nesses casos o atalho local (que só sabe responder sobre um dia) não
+    deve ser usado: a pergunta vai para a IA, que tem ferramentas de
+    comparação de meses, últimos N dias e degradação.
+    """
+    tokens = normalized.split()
+    if any(token in _PERIOD_TOKENS for token in tokens):
+        return True
+    if any(phrase in normalized for phrase in _PERIOD_PHRASES):
+        return True
+    # Datas explícitas (ex.: 15/11, 2026-11) também precisam do parser da IA.
+    return bool(re.search(r"\d", normalized))
+
+
 def detect_local_intent(
     message: str,
     *,
     today: date,
+    last_complete_day: date | None = None,
 ) -> dict | None:
     normalized = normalize_text(message)
     if not normalized:
         return None
+
+    broad_period = has_broad_period(normalized)
+    # Sem data explícita, o diagnóstico usa o último dia com janela solar
+    # completa (ex.: às 5h40 de hoje, analisa ontem).
+    default_day = last_complete_day or today
 
     tokens = _tokens(normalized)
     target_date = _relative_date(
@@ -173,7 +203,7 @@ def detect_local_intent(
         )
     )
 
-    if weather_impact_signal:
+    if weather_impact_signal and not broad_period:
         return {
             "intent": "weather_impact",
             "tool": "analisar_impacto_clima",
@@ -189,12 +219,14 @@ def detect_local_intent(
         performance_signal
         or production_quality_signal
     ):
+        if broad_period:
+            return None
         return {
             "intent": "performance",
             "tool": "diagnosticar_desempenho_diario",
             "arguments": {
                 "report_date": (
-                    target_date or today
+                    target_date or default_day
                 ).isoformat(),
             },
             "confidence": "high",

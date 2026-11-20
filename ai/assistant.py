@@ -1,11 +1,12 @@
+import calendar
 import json
 import logging
 import os
 import unicodedata
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from ai.intent_router import detect_local_intent
+from ai.intent_router import detect_local_intent, has_broad_period, normalize_text as _router_normalize
 from ai.memory import load_recent_messages, save_conversation_exchange
 from ai.prompt import SYSTEM_PROMPT
 from ai.provider import AIProviderError, AIRateLimitError, create_chat_completion
@@ -64,12 +65,36 @@ def _parse_arguments(raw_arguments) -> dict:
     return parsed
 
 
+SOLAR_WINDOW_END_HOUR = 17
+
+
+def _last_complete_day(now: datetime | None = None) -> date:
+    now = now or datetime.now(RUNTIME_TIMEZONE)
+    if now.hour >= SOLAR_WINDOW_END_HOUR:
+        return now.date()
+    return now.date() - timedelta(days=1)
+
+
 def _runtime_context() -> str:
     now = datetime.now(RUNTIME_TIMEZONE)
+    today = now.date()
+    yesterday = today - timedelta(days=1)
+    month_start = today.replace(day=1)
+    previous_month_end = month_start - timedelta(days=1)
+    week_start = today - timedelta(days=today.weekday())
     return (
-        "Contexto temporal do SolCare: "
-        f"agora é {now.isoformat()}, fuso America/Bahia. "
-        "Use essa referência para resolver datas relativas."
+        "Contexto temporal do SolCare (fuso America/Bahia):\n"
+        f"- agora: {now.strftime('%Y-%m-%d %H:%M')}\n"
+        f"- hoje: {today.isoformat()}; ontem: {yesterday.isoformat()}\n"
+        f"- esta semana: {week_start.isoformat()} até {today.isoformat()}\n"
+        f"- este mês: {today.strftime('%Y-%m')} (de {month_start.isoformat()} até hoje, "
+        f"dia {today.day} de {calendar.monthrange(today.year, today.month)[1]}; mês em andamento)\n"
+        f"- mês passado: {previous_month_end.strftime('%Y-%m')}\n"
+        f"- último dia com janela solar completa: {_last_complete_day(now).isoformat()}\n"
+        "Antes das 17h o dia de hoje ainda está incompleto: para avaliar "
+        "desempenho sem data explícita, use o último dia completo e diga qual data analisou. "
+        "Para perguntas sobre o mês ou sobre perda de rendimento, use comparar_meses "
+        "(com fair_comparison) e/ou consultar_degradacao_lenta, nunca o diagnóstico de um único dia."
     )
 
 
@@ -822,9 +847,11 @@ def _try_local_common_intent(
     user_message: str,
     chat_id: str,
 ) -> str | None:
+    now = datetime.now(RUNTIME_TIMEZONE)
     intent = detect_local_intent(
         user_message,
-        today=datetime.now(RUNTIME_TIMEZONE).date(),
+        today=now.date(),
+        last_complete_day=_last_complete_day(now),
     )
     if not intent:
         return None
@@ -951,12 +978,22 @@ def _try_local_degradation_intent(
         "piorando com o tempo",
         "perdendo desempenho",
         "perda de desempenho",
+        "perdeu rendimento",
+        "perdeu desempenho",
+        "perdeu eficiencia",
+        "rendimento caiu",
+        "caiu o rendimento",
     )
 
     if (
         not any(term in normalized for term in direct_terms)
         and not any(phrase in normalized for phrase in phrases)
     ):
+        return None
+
+    # "Perdeu rendimento esse mês?" pede comparação do período, não só a
+    # tendência geral: deixa a IA combinar comparar_meses + degradação.
+    if has_broad_period(_router_normalize(user_message)):
         return None
 
     logger.info(

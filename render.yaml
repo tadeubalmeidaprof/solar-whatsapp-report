@@ -37,12 +37,14 @@ services:
         sync: false
       - key: AI_ENABLED
         value: "true"
+      - key: AI_MEMORY_ENABLED
+        value: "true"
       - key: AI_PROVIDER
         value: groq
       - key: GROQ_API_KEY
         sync: false
       - key: GROQ_MODEL
-        value: openai/gpt-oss-20b
+        value: openai/gpt-oss-120b
       - key: GROQ_TIMEOUT_SECONDS
         value: "12"
       - key: GROQ_MAX_COMPLETION_TOKENS
