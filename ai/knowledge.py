@@ -28,6 +28,7 @@ KNOWLEDGE_BASE: list[dict] = [
             "Inversor Growatt da linha MIN, com potência nominal AC de 8 kW. "
             "Coeficiente de temperatura dos módulos: -0,24% por °C acima de 25 °C na célula. "
             "Ligação considerada no cálculo de economia: monofásica. "
+            "Está na regra nova da Lei 14.300 (GD II): paga a parcela escalonada do Fio B, 60% em 2026. "
             "Inclinação e orientação do telhado ainda não foram cadastradas no sistema."
         ),
     },
@@ -247,7 +248,7 @@ KNOWLEDGE_BASE: list[dict] = [
             "injetada e compensada: 15% em 2023, 30% em 2024, 45% em 2025, 60% em 2026, 75% em 2027 e 90% em 2028; a partir "
             "de 2029 vale a regra a ser definida pela ANEEL. Quem pediu conexão até 7 de janeiro de 2023 mantém a regra antiga "
             "até 2045. A energia consumida no mesmo momento em que é gerada não passa pela rede e não paga Fio B. "
-            "O cálculo de economia do SolCare já considera essa cobrança."
+            "Esta usina está na regra nova (GD II), ou seja, paga o Fio B escalonado; o cálculo de economia do SolCare já considera essa cobrança."
         ),
     },
     {
