@@ -20,6 +20,7 @@ from solar_queries import (
     record_maintenance_event,
 )
 from generation_explanation import get_generation_explanation
+from ai.knowledge import get_knowledge
 
 
 def _no_arguments_tool(name: str, description: str) -> dict:
@@ -38,6 +39,30 @@ def _no_arguments_tool(name: str, description: str) -> dict:
 
 
 TOOL_DEFINITIONS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "consultar_base_conhecimento",
+            "description": (
+                "Consulta a base de conhecimento do SolCare para perguntas conceituais: "
+                "ficha técnica da usina, quanto ela deveria gerar, efeito de calor, nuvens e sombra, "
+                "limpeza, manutenção, segurança, falta de energia, desligamentos por tensão da rede, "
+                "créditos, Fio B, Lei 14.300, taxa mínima, como ler a conta, garantia e vida útil. "
+                "Não traz dados ao vivo; combine com as ferramentas de dados quando a pergunta pedir números."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pergunta": {
+                        "type": "string",
+                        "description": "A pergunta do usuário, com as palavras dele.",
+                    },
+                },
+                "required": ["pergunta"],
+                "additionalProperties": False,
+            },
+        },
+    },
     {
         "type": "function",
         "function": {
@@ -536,6 +561,7 @@ class AIToolError(RuntimeError):
 
 
 _TOOL_HANDLERS = {
+    "consultar_base_conhecimento": ("get_knowledge", {"pergunta"}, {"pergunta"}),
     "explicar_geracao_diaria": (
         "get_generation_explanation", {"report_date"}, {"report_date", "start_hour", "end_hour"},
     ),
@@ -636,6 +662,9 @@ def execute_tool(name: str, arguments: dict) -> dict:
         raise AIToolError("A ferramenta não recebeu todos os argumentos obrigatórios.")
 
     handler = globals()[handler_name]
+
+    if name == "consultar_base_conhecimento":
+        arguments = {"question": arguments["pergunta"]}
 
     try:
         return handler(**arguments)
