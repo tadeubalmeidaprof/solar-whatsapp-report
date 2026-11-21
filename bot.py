@@ -49,6 +49,8 @@ Alguns exemplos:
 🛠️ *Manutenção* — Preciso fazer manutenção?
 🌦️ *Clima* — O clima afetou minha geração?
 💰 *Economia* — Quanto economizei este mês?
+🧾 *Conta de luz* — Por que minha conta não zerou? O que é Fio B?
+🧽 *Cuidados* — Como limpar as placas? É normal parar quando falta energia?
 
 Também posso analisar a curva de geração, comparar períodos e explicar códigos de falha.
 
